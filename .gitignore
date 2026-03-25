@@ -1,0 +1,7 @@
+.env
+node_modules/
+logs/
+data/*.sqlite
+*.log
+.DS_Store
+Thumbs.db

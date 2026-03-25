@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Trader — Control Panel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:        #080b12;
+      --bg2:       #0d1117;
+      --bg3:       #131920;
+      --border:    rgba(255,255,255,0.07);
+      --green:     #00e599;
+      --green-dim: rgba(0,229,153,0.12);
+      --red:       #ff4d6a;
+      --red-dim:   rgba(255,77,106,0.12);
+      --blue:      #3b9eff;
+      --blue-dim:  rgba(59,158,255,0.10);
+      --yellow:    #f0b429;
+      --text:      #e6edf3;
+      --muted:     #7d8590;
+      --glow-g:    0 0 24px rgba(0,229,153,0.3);
+      --glow-r:    0 0 24px rgba(255,77,106,0.3);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Animated starfield background */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background:
+        radial-gradient(ellipse at 20% 50%, rgba(0,229,153,0.04) 0%, transparent 60%),
+        radial-gradient(ellipse at 80% 10%, rgba(59,158,255,0.05) 0%, transparent 60%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Header ── */
+    header {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(8,11,18,0.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px; height: 60px;
+    }
+
+    .logo {
+      display: flex; align-items: center; gap: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 15px; font-weight: 600; letter-spacing: 0.05em;
+    }
+
+    .logo-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: var(--green);
+      box-shadow: var(--glow-g);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    .logo-dot.dead { background: var(--red); box-shadow: var(--glow-r); animation: none; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.6; transform: scale(0.85); }
+    }
+
+    .header-right { display: flex; align-items: center; gap: 16px; }
+
+    .badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px; font-weight: 600;
+      padding: 3px 10px; border-radius: 4px;
+      border: 1px solid;
+    }
+    .badge-paper  { color: var(--blue);   border-color: var(--blue);   background: var(--blue-dim); }
+    .badge-live   { color: var(--green);  border-color: var(--green);  background: var(--green-dim); }
+    .badge-danger { color: var(--red);    border-color: var(--red);    background: var(--red-dim); }
+
+    .uptime { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted); }
+
+    /* ── Main grid ── */
+    main {
+      position: relative; z-index: 1;
+      max-width: 1400px; margin: 0 auto;
+      padding: 24px;
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      grid-template-rows: auto auto 1fr;
+      gap: 16px;
+    }
+
+    /* ── Panels ── */
+    .panel {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted);
+    }
+
+    .panel-body { padding: 18px; }
+
+    /* ── Kill Switch ── */
+    #kill-panel {
+      grid-column: 1; grid-row: 1;
+    }
+
+    .kill-btn {
+      width: 100%;
+      padding: 16px;
+      border-radius: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px; font-weight: 600; letter-spacing: 0.06em;
+      cursor: pointer; border: 2px solid;
+      transition: all 0.2s ease;
+    }
+    .kill-btn-activate {
+      background: var(--red-dim); color: var(--red); border-color: var(--red);
+    }
+    .kill-btn-activate:hover {
+      background: var(--red); color: #fff;
+      box-shadow: var(--glow-r);
+      transform: translateY(-1px);
+    }
+    .kill-btn-deactivate {
+      background: var(--green-dim); color: var(--green); border-color: var(--green);
+    }
+    .kill-btn-deactivate:hover {
+      background: var(--green); color: #000;
+      box-shadow: var(--glow-g);
+      transform: translateY(-1px);
+    }
+
+    .kill-status {
+      margin-top: 12px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .kill-status-active   { background: var(--red-dim);   color: var(--red);   border: 1px solid rgba(255,77,106,0.3); }
+    .kill-status-inactive { background: var(--green-dim); color: var(--green); border: 1px solid rgba(0,229,153,0.3); }
+
+    .run-btn {
+      width: 100%; margin-top: 12px;
+      padding: 12px;
+      border-radius: 8px;
+      background: var(--blue-dim); color: var(--blue);
+      border: 1px solid rgba(59,158,255,0.3);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: all 0.2s ease;
+    }
+    .run-btn:hover { background: var(--blue); color: #fff; transform: translateY(-1px); }
+    .run-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    /* ── Stats ── */
+    #stats-panel { grid-column: 1; grid-row: 2; }
+
+    .stat-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    }
+
+    .stat {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .stat-label {
+      font-size: 10px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.07em;
+      color: var(--muted); margin-bottom: 5px;
+    }
+
+    .stat-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 18px; font-weight: 600;
+    }
+
+    .stat-value.positive { color: var(--green); }
+    .stat-value.negative { color: var(--red); }
+    .stat-value.neutral  { color: var(--text); }
+
+    /* ── Decisions feed ── */
+    #decisions-panel { grid-column: 2; grid-row: 1 / 3; }
+
+    .feed {
+      max-height: 480px; overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    .decision-card {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 10px;
+      transition: border-color 0.2s;
+      cursor: default;
+    }
+    .decision-card:hover { border-color: rgba(255,255,255,0.15); }
+    .decision-card.approved { border-left: 3px solid var(--green); }
+    .decision-card.rejected { border-left: 3px solid var(--red); }
+
+    .decision-top {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .decision-symbol {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 15px; font-weight: 600;
+    }
+
+    .decision-time { font-size: 11px; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+
+    .score-bar-wrap { margin: 8px 0; }
+    .score-bar-bg {
+      height: 6px; background: var(--border); border-radius: 3px; overflow: hidden;
+    }
+    .score-bar-fill {
+      height: 100%; border-radius: 3px;
+      transition: width 0.5s ease;
+    }
+    .score-bar-fill.long  { background: linear-gradient(90deg, var(--green), rgba(0,229,153,0.5)); }
+    .score-bar-fill.short { background: linear-gradient(90deg, var(--red),   rgba(255,77,106,0.5)); }
+    .score-bar-fill.none  { background: var(--muted); }
+
+    .decision-meta {
+      display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;
+    }
+
+    .tag {
+      font-size: 10px; font-weight: 600; font-family: 'JetBrains Mono', monospace;
+      padding: 2px 8px; border-radius: 4px;
+    }
+    .tag-long    { background: var(--green-dim); color: var(--green); }
+    .tag-short   { background: var(--red-dim);   color: var(--red); }
+    .tag-no      { background: rgba(255,255,255,0.05); color: var(--muted); }
+    .tag-nodes   { background: var(--blue-dim);  color: var(--blue); }
+    .tag-paper   { background: rgba(240,180,41,0.1); color: var(--yellow); }
+
+    .thesis {
+      font-size: 11px; color: var(--muted);
+      margin-top: 6px; line-height: 1.5;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+
+    /* ── Trades table ── */
+    #trades-panel { grid-column: 1 / 3; grid-row: 3; }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th {
+      text-align: left; padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 10px; font-weight: 600; letter-spacing: 0.07em;
+      text-transform: uppercase; color: var(--muted);
+    }
+    td {
+      padding: 10px 12px; border-bottom: 1px solid var(--border);
+      font-family: 'JetBrains Mono', monospace; font-size: 12px;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--bg3); }
+    .td-green { color: var(--green); }
+    .td-red   { color: var(--red); }
+    .td-muted { color: var(--muted); font-size: 11px; }
+
+    /* ── Empty states ── */
+    .empty {
+      padding: 40px; text-align: center;
+      color: var(--muted); font-size: 13px;
+    }
+    .empty-icon { font-size: 32px; margin-bottom: 10px; }
+
+    /* ── Spinner ── */
+    .spinner {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--blue);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle; margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed; bottom: 24px; right: 24px;
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px 18px;
+      font-size: 13px; font-family: 'JetBrains Mono', monospace;
+      opacity: 0; transform: translateY(10px);
+      transition: all 0.3s ease; z-index: 999;
+      max-width: 320px;
+    }
+    #toast.show { opacity: 1; transform: translateY(0); }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; }
+      #decisions-panel, #trades-panel { grid-column: 1; }
+      #decisions-panel { grid-row: auto; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-dot" id="status-dot"></div>
+    AI TRADER
+  </div>
+  <div class="header-right">
+    <span class="uptime" id="uptime-display">UP: 0s</span>
+    <span class="badge badge-paper" id="mode-badge">PAPER</span>
+    <span class="badge" id="last-run-badge" style="color:var(--muted);border-color:var(--border);">NEVER RUN</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- Kill Switch -->
+  <div class="panel" id="kill-panel">
+    <div class="panel-header">
+      <span>⚡ Control</span>
+      <span id="ks-indicator">—</span>
+    </div>
+    <div class="panel-body">
+      <button class="kill-btn kill-btn-activate" id="kill-btn" onclick="toggleKillSwitch()">
+        🛑 ACTIVATE KILL SWITCH
+      </button>
+      <div class="kill-status kill-status-inactive" id="kill-status">
+        Trading: ACTIVE
+      </div>
+      <button class="run-btn" id="run-btn" onclick="runNow()">
+        ▶ Run Analysis Now
+      </button>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="panel" id="stats-panel">
+    <div class="panel-header"><span>📊 Statistics</span></div>
+    <div class="panel-body">
+      <div class="stat-grid">
+        <div class="stat">
+          <div class="stat-label">Daily P&L</div>
+          <div class="stat-value neutral" id="stat-pnl">$0.00</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Total Trades</div>
+          <div class="stat-value neutral" id="stat-trades">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Win Rate</div>
+          <div class="stat-value neutral" id="stat-winrate">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Consec. Losses</div>
+          <div class="stat-value neutral" id="stat-losses">0</div>
+        </div>
+        <div class="stat" style="grid-column: 1/-1">
+          <div class="stat-label">Account Balance</div>
+          <div class="stat-value neutral" id="stat-balance">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI Decisions Feed -->
+  <div class="panel" id="decisions-panel">
+    <div class="panel-header">
+      <span>🧠 AI Decisions</span>
+      <span style="font-size:11px;" id="decisions-count">—</span>
+    </div>
+    <div class="panel-body" style="padding: 12px;">
+      <div class="feed" id="decisions-feed">
+        <div class="empty"><div class="empty-icon">🤖</div>No decisions yet. Click "Run Analysis Now" to start.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Trades Table -->
+  <div class="panel" id="trades-panel">
+    <div class="panel-header">
+      <span>📋 Trade Log</span>
+      <span style="font-size:11px;" id="trades-count">0 trades</span>
+    </div>
+    <div class="panel-body" style="padding: 0;">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Symbol</th>
+              <th>Direction</th>
+              <th>Qty</th>
+              <th>Entry</th>
+              <th>Stop</th>
+              <th>Status</th>
+              <th>P&L</th>
+              <th>Mode</th>
+            </tr>
+          </thead>
+          <tbody id="trades-tbody">
+            <tr><td colspan="9" class="empty">No trades yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<div id="toast"></div>
+
+<script>
+  const $ = id => document.getElementById(id);
+
+  let killActive = false;
+  let startTime  = Date.now();
+  let refreshInterval;
+
+  // ── Uptime counter ──
+  setInterval(() => {
+    const s = Math.floor((Date.now() - startTime) / 1000);
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    $('uptime-display').textContent = `UP: ${h}h ${String(m).padStart(2,'0')}m ${String(sec).padStart(2,'0')}s`;
+  }, 1000);
+
+  // ── Toast ──
+  function showToast(msg, color = 'var(--text)') {
+    const t = $('toast');
+    t.textContent = msg;
+    t.style.color = color;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+  }
+
+  // ── Fetch status ──
+  async function fetchStatus() {
+    try {
+      const r = await fetch('/api/status');
+      const d = await r.json();
+
+      killActive = d.killSwitch;
+      updateKillUI();
+
+      // Mode badge
+      const badge = $('mode-badge');
+      badge.textContent = d.mode;
+      badge.className = 'badge ' + (d.mode === 'LIVE' ? 'badge-live' : 'badge-paper');
+
+      // Last run
+      const lr = $('last-run-badge');
+      if (d.lastRun) {
+        const ago = Math.floor((Date.now() - new Date(d.lastRun)) / 60000);
+        lr.textContent = ago < 1 ? 'JUST NOW' : `${ago}m AGO`;
+      }
+
+      // Stats
+      const pnl = parseFloat(d.dailyPnl || 0);
+      const pnlEl = $('stat-pnl');
+      pnlEl.textContent = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
+      pnlEl.className = 'stat-value ' + (pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : 'neutral');
+
+      $('stat-trades').textContent = d.totalTrades;
+      $('stat-losses').textContent = d.consecutiveLoss;
+      $('stat-balance').textContent = '$' + Number(d.balance).toLocaleString();
+
+      const wins = d.totalWins || 0, total = d.totalTrades || 0;
+      const winEl = $('stat-winrate');
+      if (total > 0) {
+        const wr = (wins / total * 100).toFixed(1);
+        winEl.textContent = wr + '%';
+        winEl.className = 'stat-value ' + (wr >= 50 ? 'positive' : 'negative');
+      }
+    } catch(e) {
+      $('status-dot').className = 'logo-dot dead';
+    }
+  }
+
+  // ── Fetch decisions ──
+  async function fetchDecisions() {
+    const r = await fetch('/api/decisions?limit=20');
+    const decisions = await r.json();
+    $('decisions-count').textContent = `${decisions.length} recent`;
+
+    if (!decisions.length) return;
+
+    const html = decisions.map(d => {
+      const score    = Math.abs(d.composite_score);
+      const barPct   = Math.min(100, score);
+      const dir      = (d.direction || 'NO_TRADE').toUpperCase();
+      const barClass = dir === 'LONG' ? 'long' : dir === 'SHORT' ? 'short' : 'none';
+      const tagClass = dir === 'LONG' ? 'tag-long' : dir === 'SHORT' ? 'tag-short' : 'tag-no';
+      const approved = d.approved ? 'approved' : 'rejected';
+      const time     = new Date(d.timestamp).toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
+      const nodes    = d.nodes_used ? JSON.parse(d.nodes_used).join('+') : '—';
+
+      return `
+        <div class="decision-card ${approved}">
+          <div class="decision-top">
+            <span class="decision-symbol">${d.symbol}</span>
+            <span class="decision-time">${time}</span>
+          </div>
+          <div class="score-bar-wrap">
+            <div style="display:flex; justify-content:space-between; font-size:10px; color:var(--muted); margin-bottom:4px;">
+              <span>Score</span>
+              <span style="font-family:'JetBrains Mono',monospace">${d.composite_score?.toFixed(1) ?? '—'}</span>
+            </div>
+            <div class="score-bar-bg">
+              <div class="score-bar-fill ${barClass}" style="width:${barPct}%"></div>
+            </div>
+          </div>
+          <div class="decision-meta">
+            <span class="tag ${tagClass}">${dir}</span>
+            <span class="tag tag-nodes">nodes: ${nodes}</span>
+            ${d.approved ? '<span class="tag tag-long">✓ APPROVED</span>' : '<span class="tag tag-no">✗ REJECTED</span>'}
+          </div>
+          ${d.gemini_thesis ? `<div class="thesis">${d.gemini_thesis}</div>` : ''}
+        </div>`;
+    }).join('');
+
+    $('decisions-feed').innerHTML = html;
+  }
+
+  // ── Fetch trades ──
+  async function fetchTrades() {
+    const r = await fetch('/api/trades?limit=25');
+    const trades = await r.json();
+    $('trades-count').textContent = `${trades.length} trades`;
+
+    if (!trades.length) {
+      $('trades-tbody').innerHTML = '<tr><td colspan="9" class="empty">No trades yet.</td></tr>';
+      return;
+    }
+
+    $('trades-tbody').innerHTML = trades.map(t => {
+      const time  = new Date(t.timestamp).toLocaleString('en-US', { month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+      const pnl   = t.pnl != null ? (t.pnl >= 0 ? `+$${t.pnl.toFixed(2)}` : `-$${Math.abs(t.pnl).toFixed(2)}`) : '—';
+      const pnlCl = t.pnl > 0 ? 'td-green' : t.pnl < 0 ? 'td-red' : '';
+      const dirCl = t.direction === 'LONG' ? 'td-green' : 'td-red';
+      return `<tr>
+        <td class="td-muted">${time}</td>
+        <td><strong>${t.symbol}</strong></td>
+        <td class="${dirCl}">${t.direction}</td>
+        <td>${t.qty}</td>
+        <td>${t.entry_price ? '$' + parseFloat(t.entry_price).toFixed(2) : '—'}</td>
+        <td class="td-muted">${t.stop_loss ? '$' + parseFloat(t.stop_loss).toFixed(2) : '—'}</td>
+        <td class="td-muted">${t.status}</td>
+        <td class="${pnlCl}">${pnl}</td>
+        <td><span class="tag ${t.mode === 'live' ? 'tag-long' : 'tag-paper'}">${(t.mode||'paper').toUpperCase()}</span></td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Kill switch UI ──
+  function updateKillUI() {
+    const btn = $('kill-btn');
+    const ks  = $('kill-status');
+    const dot = $('status-dot');
+    const ind = $('ks-indicator');
+
+    if (killActive) {
+      btn.textContent = '✅ DEACTIVATE KILL SWITCH';
+      btn.className   = 'kill-btn kill-btn-deactivate';
+      ks.textContent  = '⚡ Kill switch ACTIVE — all trading halted';
+      ks.className    = 'kill-status kill-status-active';
+      dot.className   = 'logo-dot dead';
+      ind.textContent = '🔴 HALTED';
+      ind.style.color = 'var(--red)';
+    } else {
+      btn.textContent = '🛑 ACTIVATE KILL SWITCH';
+      btn.className   = 'kill-btn kill-btn-activate';
+      ks.textContent  = 'Trading: ACTIVE — system running normally';
+      ks.className    = 'kill-status kill-status-inactive';
+      dot.className   = 'logo-dot';
+      ind.textContent = '🟢 ACTIVE';
+      ind.style.color = 'var(--green)';
+    }
+  }
+
+  async function toggleKillSwitch() {
+    const action = killActive ? 'deactivate' : 'activate';
+    if (action === 'activate' && !confirm('Activate the kill switch? This will halt all trading immediately.')) return;
+
+    const r = await fetch('/api/killswitch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, reason: 'Manual via control panel' }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      killActive = d.active;
+      updateKillUI();
+      showToast(killActive ? '🛑 Kill switch activated' : '✅ Trading resumed', killActive ? 'var(--red)' : 'var(--green)');
+    }
+  }
+
+  async function runNow() {
+    const btn = $('run-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Running...';
+    await fetch('/api/run-now', { method: 'POST' });
+    showToast('▶ Analysis cycle started…', 'var(--blue)');
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = '▶ Run Analysis Now';
+      refreshAll();
+    }, 3000);
+  }
+
+  function refreshAll() {
+    fetchStatus();
+    fetchDecisions();
+    fetchTrades();
+  }
+
+  // Initial load + polling every 10s
+  refreshAll();
+  refreshInterval = setInterval(refreshAll, 10000);
+</script>
+</body>
+</html>
