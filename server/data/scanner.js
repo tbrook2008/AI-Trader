@@ -38,10 +38,10 @@ async function scanForOptimalSymbols() {
       active.quotes.forEach(q => candidates.add(q.symbol));
     }
 
-    // 4. Get Top Crypto
-    const crypto = await yf.screener({ scrIds: 'top_crypto', count: 20 });
-    if (crypto?.quotes) {
-      crypto.quotes.forEach(q => candidates.add(q.symbol));
+    // 4. Get Technology Stocks
+    const tech = await yf.screener({ scrIds: 'growth_technology_stocks', count: 20 });
+    if (tech?.quotes) {
+      tech.quotes.forEach(q => candidates.add(q.symbol));
     }
 
     const symbolList = Array.from(candidates);
