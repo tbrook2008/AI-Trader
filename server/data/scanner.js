@@ -26,39 +26,45 @@ async function scanForOptimalSymbols() {
       trends.trends[0].symbols.forEach(s => candidates.add(s.symbol));
     }
 
-    // 2. Get Daily Gainers
-    const gainers = await yf.dailyGainers({ count: 10, region: 'US' });
-    if (gainers?.results) {
-      gainers.results.forEach(s => candidates.add(s.symbol));
+    // 2. Get Top Gainers (Modern Screener)
+    const gainers = await yf.screener({ scrIds: 'day_gainers', count: 20 });
+    if (gainers?.quotes) {
+      gainers.quotes.forEach(q => candidates.add(q.symbol));
     }
 
-    // 3. Get Daily Losers (for mean reversion or shorts)
-    const losers = await yf.dailyLosers({ count: 10, region: 'US' });
-    if (losers?.results) {
-      losers.results.forEach(s => candidates.add(s.symbol));
+    // 3. Get Most Active Stocks
+    const active = await yf.screener({ scrIds: 'most_actives', count: 20 });
+    if (active?.quotes) {
+      active.quotes.forEach(q => candidates.add(q.symbol));
+    }
+
+    // 4. Get Top Crypto
+    const crypto = await yf.screener({ scrIds: 'top_crypto', count: 20 });
+    if (crypto?.quotes) {
+      crypto.quotes.forEach(q => candidates.add(q.symbol));
     }
 
     const symbolList = Array.from(candidates);
-    logger.info(`Found ${symbolList.length} total candidates. Filtering for quality...`);
+    logger.info(`Found ${symbolList.length} total candidates. Filtering for top-tier opportunities...`);
 
     // 4. Batch fetch current quotes to filter for price and volume
     const quotes = await yf.quote(symbolList);
     
     const filtered = (Array.isArray(quotes) ? quotes : [quotes])
       .filter(q => {
-        if (!q.regularMarketPrice || q.regularMarketPrice < 10 || q.regularMarketPrice > 1000) return false;
-        if (!q.averageDailyVolume3Month || q.averageDailyVolume3Month < 500000) return false;
+        if (!q.regularMarketPrice || q.regularMarketPrice < 5 || q.regularMarketPrice > 2000) return false;
+        if (!q.averageDailyVolume3Month || q.averageDailyVolume3Month < 1000000) return false;
         return true;
       })
-      .slice(0, 5) // Take top 5 optimal ones
+      .slice(0, 8) // Analyze top 8 optimal ones per cycle
       .map(q => q.symbol);
 
-    logger.info('Optimal symbols discovered', { symbols: filtered });
-    return filtered.length > 0 ? filtered : ['AAPL', 'TSLA', 'SPY', 'QQQ', 'MSFT']; // Fallback
+    logger.info('Optimal trading candidates discovered', { count: filtered.length, symbols: filtered });
+    return filtered.length > 0 ? filtered : ['AAPL', 'TSLA', 'NVDA', 'COIN', 'MSTR']; // Robust Fallback
 
   } catch (err) {
     logger.error('Scanner failed — falling back to staples', { error: err.message });
-    return ['AAPL', 'TSLA', 'SPY', 'QQQ', 'MSFT'];
+    return ['AAPL', 'TSLA', 'NVDA', 'COIN', 'MSTR'];
   }
 }
 

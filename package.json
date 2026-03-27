@@ -11,7 +11,8 @@
     "test:db": "node -e \"require('./server/db/schema').initDb(); console.log('✅ DB initialized')\"",
     "test:kelly": "node -e \"const k=require('./server/risk/kellyCriterion'); console.log(k.calculate({winRate:0.6,avgWin:0.05,avgLoss:0.03,balance:100000}))\"",
     "test:ollama": "node -e \"require('./server/ai/ollamaNode').test().then(console.log).catch(console.error)\"",
-    "dry-run": "cross-env DRY_RUN=true node server/autonomous/scheduler.js"
+    "dry-run": "cross-env DRY_RUN=true node server/autonomous/scheduler.js",
+    "trade": "node server/start-all.js"
   },
   "dependencies": {
     "@alpacahq/alpaca-trade-api": "^3.1.3",
