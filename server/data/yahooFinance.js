@@ -1,9 +1,22 @@
 require('dotenv').config();
-const yahooFinance = require('yahoo-finance2').default;
 const logger = require('../utils/logger');
+let _yf = null;
 
-// Suppress yahoo-finance2 validation warnings in production
-yahooFinance.suppressNotices(['yahooSurvey']);
+/**
+ * Lazy-load yahoo-finance2 because it's ESM-only and needs to be compatible with Node 24's CJS strictness.
+ */
+async function getYF() {
+  if (!_yf) {
+    const YF = (await import('yahoo-finance2')).default;
+    const yf = new YF();
+    // Suppress notices if the method exists
+    if (typeof yf.suppressNotices === 'function') {
+      yf.suppressNotices(['yahooSurvey']);
+    }
+    _yf = yf;
+  }
+  return _yf;
+}
 
 /**
  * Compute EMA for an array of closing prices.
@@ -77,7 +90,8 @@ function detectRegime(closes, bars) {
  */
 async function getQuote(symbol) {
   try {
-    const q = await yahooFinance.quote(symbol);
+    const yf = await getYF();
+    const q = await yf.quote(symbol);
     return {
       symbol: q.symbol,
       price: q.regularMarketPrice,
@@ -105,13 +119,23 @@ async function getQuote(symbol) {
  */
 async function getOHLCVWithIndicators(symbol, period1, interval = '1d') {
   try {
-    // Yahoo finance2 historical only supports daily on free; use chart for intraday
-    const bars = await yahooFinance.historical(symbol, { period1, interval });
-
-    if (!bars || bars.length < 30) {
-      logger.warn('Insufficient bars for indicators', { symbol, count: bars?.length });
+    const yf = await getYF();
+    // yf.chart is more robust than yf.historical in recent versions
+    const chart = await yf.chart(symbol, { period1, interval });
+    
+    if (!chart || !chart.quotes || chart.quotes.length < 30) {
+      logger.warn('Insufficient bars for indicators', { symbol, count: chart?.quotes?.length });
       return null;
     }
+
+    const bars = chart.quotes.map(q => ({
+      date:   q.date,
+      open:   q.open,
+      high:   q.high,
+      low:    q.low,
+      close:  q.close,
+      volume: q.volume
+    }));
 
     const closes = bars.map(b => b.close);
     const ema9   = computeEMA(closes, 9);
@@ -143,7 +167,8 @@ async function getOHLCVWithIndicators(symbol, period1, interval = '1d') {
  */
 async function getSymbolNews(symbol) {
   try {
-    const result = await yahooFinance.search(symbol, { newsCount: 10, quotesCount: 0 });
+    const yf = await getYF();
+    const result = await yf.search(symbol, { newsCount: 10, quotesCount: 0 });
     return (result.news || []).map(n => ({
       title: n.title,
       publisher: n.publisher,

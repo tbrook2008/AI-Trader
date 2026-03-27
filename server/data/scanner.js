@@ -1,0 +1,65 @@
+const logger = require('../utils/logger');
+
+let yfInstance = null;
+async function getYF() {
+  if (!yfInstance) {
+    const YF = (await import('yahoo-finance2')).default;
+    yfInstance = new YF();
+  }
+  return yfInstance;
+}
+
+/**
+ * Scans multiple sources (Trending, Gainers, Losers) for "optimal" trading symbols.
+ * Filters for US symbols with prices between $10 and $1000 and significant activity.
+ */
+async function scanForOptimalSymbols() {
+  const yf = await getYF();
+  const candidates = new Set();
+  
+  try {
+    logger.info('Scanning for optimal symbols...');
+
+    // 1. Get Trending Symbols (US)
+    const trends = await yf.trendingSymbols('US');
+    if (trends?.trends?.[0]?.symbols) {
+      trends.trends[0].symbols.forEach(s => candidates.add(s.symbol));
+    }
+
+    // 2. Get Daily Gainers
+    const gainers = await yf.dailyGainers({ count: 10, region: 'US' });
+    if (gainers?.results) {
+      gainers.results.forEach(s => candidates.add(s.symbol));
+    }
+
+    // 3. Get Daily Losers (for mean reversion or shorts)
+    const losers = await yf.dailyLosers({ count: 10, region: 'US' });
+    if (losers?.results) {
+      losers.results.forEach(s => candidates.add(s.symbol));
+    }
+
+    const symbolList = Array.from(candidates);
+    logger.info(`Found ${symbolList.length} total candidates. Filtering for quality...`);
+
+    // 4. Batch fetch current quotes to filter for price and volume
+    const quotes = await yf.quote(symbolList);
+    
+    const filtered = (Array.isArray(quotes) ? quotes : [quotes])
+      .filter(q => {
+        if (!q.regularMarketPrice || q.regularMarketPrice < 10 || q.regularMarketPrice > 1000) return false;
+        if (!q.averageDailyVolume3Month || q.averageDailyVolume3Month < 500000) return false;
+        return true;
+      })
+      .slice(0, 5) // Take top 5 optimal ones
+      .map(q => q.symbol);
+
+    logger.info('Optimal symbols discovered', { symbols: filtered });
+    return filtered.length > 0 ? filtered : ['AAPL', 'TSLA', 'SPY', 'QQQ', 'MSFT']; // Fallback
+
+  } catch (err) {
+    logger.error('Scanner failed — falling back to staples', { error: err.message });
+    return ['AAPL', 'TSLA', 'SPY', 'QQQ', 'MSFT'];
+  }
+}
+
+module.exports = { scanForOptimalSymbols };

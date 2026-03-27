@@ -7,8 +7,11 @@ const OLLAMA_BASE = () =>
 
 const TIMEOUT_MS = 30000; // Ollama can be slow on first run
 
-const SENTIMENT_PROMPT = (symbol, headlines) => `
+const SENTIMENT_PROMPT = (symbol, headlines, feedback = null) => `
 You are a financial sentiment analyst. Rate the OVERALL market sentiment for ${symbol} based on these recent news headlines.
+
+${feedback ? `CRITICAL FEEDBACK FROM SENIOR ANALYST: "${feedback}"
+Please re-evaluate your thesis considering this feedback. Deep-dive into the data.` : ''}
 
 Headlines:
 ${headlines.map((h, i) => `${i + 1}. ${h}`).join('\n')}
@@ -18,14 +21,12 @@ Respond with ONLY a JSON object in this exact format:
 
 Where:
 - -1.0 = extremely bearish
-- -0.5 = moderately bearish
 - 0.0 = neutral
-- +0.5 = moderately bullish
 - +1.0 = extremely bullish
 
-ONLY output valid JSON. No explanation, no markdown.`;
+ONLY output valid JSON. No explanation.`;
 
-async function analyze(bundle) {
+async function analyze(bundle, feedback = null) {
   const headlines = bundle.headlines.map(h => h.title).filter(Boolean);
 
   if (headlines.length === 0) {
@@ -38,9 +39,9 @@ async function analyze(bundle) {
       `${OLLAMA_BASE()}/api/generate`,
       {
         model: process.env.OLLAMA_MODEL || 'llama3',
-        prompt: SENTIMENT_PROMPT(bundle.symbol, headlines.slice(0, 8)),
+        prompt: SENTIMENT_PROMPT(bundle.symbol, headlines.slice(0, 8), feedback),
         stream: false,
-        options: { temperature: 0.1, num_predict: 100 },
+        options: { temperature: 0.1, num_predict: 150 },
       },
       { timeout: TIMEOUT_MS }
     );
@@ -48,22 +49,22 @@ async function analyze(bundle) {
     const raw = response.data?.response?.trim();
     if (!raw) throw new Error('Empty response from Ollama');
 
-    // Extract JSON from response (sometimes LLMs add extra text)
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error(`Non-JSON Ollama response: ${raw.slice(0, 100)}`);
 
     const parsed = JSON.parse(jsonMatch[0]);
     const sentiment = Math.max(-1, Math.min(1, parseFloat(parsed.sentiment)));
 
-    logger.info('Ollama node complete', { symbol: bundle.symbol, sentiment, summary: parsed.summary });
+    logger.info(feedback ? 'Ollama refinement complete' : 'Ollama node complete', { 
+      symbol: bundle.symbol, 
+      sentiment, 
+      summary: parsed.summary 
+    });
+    
     return { sentiment, summary: parsed.summary ?? '' };
   } catch (err) {
-    if (err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET') {
-      logger.warn('Ollama unreachable — node will be excluded from consensus', { symbol: bundle.symbol });
-    } else {
-      logger.error('Ollama node error', { symbol: bundle.symbol, error: err.message });
-    }
-    return null; // null = node failed, weight redistributes
+    logger.error('Ollama node error', { symbol: bundle.symbol, error: err.message });
+    return null;
   }
 }
 
