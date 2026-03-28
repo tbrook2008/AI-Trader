@@ -22,7 +22,7 @@ async function runChecks({ consensus, symbol, positionDollars, alpacaAccount, op
     : parseFloat(process.env.PAPER_ACCOUNT_BALANCE || '100000');
   const dailyPnl    = getDailyPnl();
   const consecLoss  = parseInt(getState('consecutive_losses') || '0');
-  const lastRunStr  = getState('last_run') || '';
+  const lastRunStr  = getState('last_trade_time') || '';
   const lastRunMs   = lastRunStr ? new Date(lastRunStr).getTime() : 0;
   const minsAgo     = (Date.now() - lastRunMs) / 60000;
 

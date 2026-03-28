@@ -43,6 +43,10 @@ async function scanForOptimalSymbols() {
     if (tech?.quotes) {
       tech.quotes.forEach(q => candidates.add(q.symbol));
     }
+    
+    // 5. Add Top Crypto (24/7 scanning)
+    const cryptos = ['BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD', 'ADA-USD', 'XRP-USD', 'DOT-USD', 'AVAX-USD', 'LINK-USD', 'BNB-USD'];
+    cryptos.forEach(s => candidates.add(s));
 
     const symbolList = Array.from(candidates);
     logger.info(`Found ${symbolList.length} total candidates. Filtering for top-tier opportunities...`);
@@ -52,11 +56,23 @@ async function scanForOptimalSymbols() {
     
     const filtered = (Array.isArray(quotes) ? quotes : [quotes])
       .filter(q => {
+        if (!q || !q.symbol) return false;
+        // Always allow crypto for 24/7 coverage
+        if (q.symbol.endsWith('-USD')) return true;
+        // Strict filters for stocks
         if (!q.regularMarketPrice || q.regularMarketPrice < 5 || q.regularMarketPrice > 2000) return false;
         if (!q.averageDailyVolume3Month || q.averageDailyVolume3Month < 1000000) return false;
         return true;
       })
-      .slice(0, 8) // Analyze top 8 optimal ones per cycle
+      // Prioritize Crypto symbols to the top for weekend trading
+      .sort((a, b) => {
+        const aIsCrypto = a.symbol.endsWith('-USD');
+        const bIsCrypto = b.symbol.endsWith('-USD');
+        if (aIsCrypto && !bIsCrypto) return -1;
+        if (!aIsCrypto && bIsCrypto) return 1;
+        return 0;
+      })
+      .slice(0, 8) 
       .map(q => q.symbol);
 
     logger.info('Optimal trading candidates discovered', { count: filtered.length, symbols: filtered });

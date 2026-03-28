@@ -82,7 +82,7 @@ async function execute({ bundle, consensus, decisionId }) {
     qty:       sizing.qty,
     entryPrice: price,
     stopLoss:   stopPrice,
-    targetPrice: consensus.nodeResults.gemini?.target ?? null,
+    targetPrice: consensus.nodeResults?.gemini?.target ?? null,
     alpacaOrderId: order.orderId,
     decisionId,
     mode,
@@ -102,7 +102,7 @@ async function execute({ bundle, consensus, decisionId }) {
   });
 
   // Update last trade time
-  setState('last_run', new Date().toISOString());
+  setState('last_trade_time', new Date().toISOString());
 
   return {
     executed: true,

@@ -97,12 +97,17 @@ async function runLoop() {
       let tradeResult = null;
 
       if (decision.approved && decision.direction !== 'NO_TRADE') {
+        const nodesUsed = refinedCandidates.some(rc => rc.symbol === decision.symbol) 
+          ? ['Ollama', 'Gemini', 'Refined'] 
+          : ['Ollama', 'Gemini'];
+
         tradeResult = await execute({ 
           bundle: candidate.bundle, 
           consensus: { 
             approved: true, 
             direction: decision.direction, 
-            compositeScore: decision.score ?? 0 
+            compositeScore: decision.score ?? 0,
+            nodesUsed
           } 
         });
         executed = tradeResult.executed;
@@ -124,7 +129,7 @@ async function runLoop() {
       finalResults.push({ symbol: candidate.symbol, approved: decision.approved, executed });
     }
 
-    setState('last_run', new Date().toISOString());
+    setState('last_loop_run', new Date().toISOString());
     logger.info('═══ Staged Loop cycle complete ═══', { 
       total: symbols.length, 
       approved: finalResults.filter(r => r.approved).length,
