@@ -93,28 +93,11 @@ async function runLoop() {
       const candidate = candidates.find(c => c.symbol === decision.symbol);
       if (!candidate) continue;
 
-      let executed = false;
-      let tradeResult = null;
+      const nodesUsed = refinedCandidates.some(rc => rc.symbol === decision.symbol)
+        ? ['Ollama', 'Gemini', 'Refined']
+        : ['Ollama', 'Gemini'];
 
-      if (decision.approved && decision.direction !== 'NO_TRADE') {
-        const nodesUsed = refinedCandidates.some(rc => rc.symbol === decision.symbol) 
-          ? ['Ollama', 'Gemini', 'Refined'] 
-          : ['Ollama', 'Gemini'];
-
-        tradeResult = await execute({ 
-          bundle: candidate.bundle, 
-          consensus: { 
-            approved: true, 
-            direction: decision.direction, 
-            compositeScore: decision.score ?? 0,
-            nodesUsed
-          } 
-        });
-        executed = tradeResult.executed;
-      }
-
-      // Log decision
-      logDecision({
+      const decisionId = logDecision({
         symbol: candidate.symbol,
         geminiScore: decision.score,
         geminiThesis: decision.reason,
@@ -123,8 +106,25 @@ async function runLoop() {
         approved: decision.approved,
         direction: decision.direction,
         reason: decision.reason,
-        nodesUsed: refinedCandidates.some(rc => rc.symbol === decision.symbol) ? 3 : 2
+        nodesUsed
       });
+
+      let executed = false;
+      let tradeResult = null;
+
+      if (decision.approved && decision.direction !== 'NO_TRADE') {
+        tradeResult = await execute({
+          bundle: candidate.bundle,
+          consensus: {
+            approved: true,
+            direction: decision.direction,
+            compositeScore: decision.score ?? 0,
+            nodesUsed
+          },
+          decisionId
+        });
+        executed = tradeResult.executed;
+      }
 
       finalResults.push({ symbol: candidate.symbol, approved: decision.approved, executed });
     }

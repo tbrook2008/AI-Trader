@@ -17,12 +17,21 @@ const DRY_RUN       = process.env.DRY_RUN === 'true';
  * 3. Alpaca order submission
  * 4. SQLite logging
  */
-async function execute({ bundle, consensus, decisionId }) {
+async function execute({ bundle, consensus = {}, decisionId }) {
   const symbol = bundle.symbol;
   const price  = bundle.price;
   const mode   = process.env.TRADING_MODE || 'paper';
+  consensus = consensus || {};
 
-  logger.info('Trade executor started', { symbol, direction: consensus.direction, score: consensus.compositeScore });
+  const direction = consensus.direction ?? 'NO_TRADE';
+  const score = consensus.compositeScore ?? 0;
+
+  logger.info('Trade executor started', { symbol, direction, score });
+
+  if (!['LONG', 'SHORT'].includes(direction)) {
+    logger.warn('Trade executor skipped — invalid consensus direction', { symbol, direction });
+    return { executed: false, reason: 'Invalid consensus direction' };
+  }
 
   // Step 1: Get account info and open positions for validation
   let account, openPositions;
@@ -55,8 +64,8 @@ async function execute({ bundle, consensus, decisionId }) {
   }
 
   // Step 4: Compute stop loss
-  const side      = consensus.direction === 'LONG' ? 'buy' : 'sell';
-  const stopPrice = consensus.direction === 'LONG'
+  const side      = direction === 'LONG' ? 'buy' : 'sell';
+  const stopPrice = direction === 'LONG'
     ? parseFloat((price * (1 - STOP_LOSS_PCT)).toFixed(4))
     : parseFloat((price * (1 + STOP_LOSS_PCT)).toFixed(4));
 
@@ -78,7 +87,7 @@ async function execute({ bundle, consensus, decisionId }) {
   // Step 6: Log trade to SQLite
   const tradeId = logTrade({
     symbol,
-    direction: consensus.direction,
+    direction,
     qty:       sizing.qty,
     entryPrice: price,
     stopLoss:   stopPrice,
@@ -97,8 +106,8 @@ async function execute({ bundle, consensus, decisionId }) {
     rsi14:          bundle.rsi14,
     trend:          bundle.trend,
     regime:         bundle.regime,
-    direction:      consensus.direction,
-    compositeScore: consensus.compositeScore,
+    direction,
+    compositeScore: score,
   });
 
   // Update last trade time

@@ -16,55 +16,62 @@ async function getYF() {
 async function scanForOptimalSymbols() {
   const yf = await getYF();
   const candidates = new Set();
-  
+
+  async function tryScreener(scrIds, label) {
+    try {
+      const result = await yf.screener({ scrIds: Array.isArray(scrIds) ? scrIds : [scrIds], count: 20 });
+      if (result?.quotes) {
+        result.quotes.forEach(q => q.symbol && candidates.add(q.symbol));
+      }
+    } catch (err) {
+      logger.warn('Yahoo Finance screener failed', { label, scrIds, error: err.message });
+    }
+  }
+
   try {
     logger.info('Scanning for optimal symbols...');
 
-    // 1. Get Trending Symbols (US)
     const trends = await yf.trendingSymbols('US');
     if (trends?.trends?.[0]?.symbols) {
-      trends.trends[0].symbols.forEach(s => candidates.add(s.symbol));
+      trends.trends[0].symbols.forEach(s => s.symbol && candidates.add(s.symbol));
     }
 
-    // 2. Get Top Gainers (Modern Screener)
-    const gainers = await yf.screener({ scrIds: 'day_gainers', count: 20 });
-    if (gainers?.quotes) {
-      gainers.quotes.forEach(q => candidates.add(q.symbol));
-    }
+    await tryScreener('day_gainers', 'day_gainers');
+    await tryScreener('most_actives', 'most_actives');
+    await tryScreener('technology_stocks', 'technology_stocks');
 
-    // 3. Get Most Active Stocks
-    const active = await yf.screener({ scrIds: 'most_actives', count: 20 });
-    if (active?.quotes) {
-      active.quotes.forEach(q => candidates.add(q.symbol));
-    }
-
-    // 4. Get Technology Stocks
-    const tech = await yf.screener({ scrIds: 'growth_technology_stocks', count: 20 });
-    if (tech?.quotes) {
-      tech.quotes.forEach(q => candidates.add(q.symbol));
-    }
-    
-    // 5. Add Top Crypto (24/7 scanning)
     const cryptos = ['BTC-USD', 'ETH-USD', 'SOL-USD', 'DOGE-USD', 'ADA-USD', 'XRP-USD', 'DOT-USD', 'AVAX-USD', 'LINK-USD', 'BNB-USD'];
     cryptos.forEach(s => candidates.add(s));
 
     const symbolList = Array.from(candidates);
     logger.info(`Found ${symbolList.length} total candidates. Filtering for top-tier opportunities...`);
 
-    // 4. Batch fetch current quotes to filter for price and volume
-    const quotes = await yf.quote(symbolList);
-    
-    const filtered = (Array.isArray(quotes) ? quotes : [quotes])
+    let quotes;
+    try {
+      quotes = await yf.quote(symbolList);
+    } catch (err) {
+      logger.warn('Yahoo Finance quote batch failed, retrying individually', { error: err.message });
+      const quoteResults = [];
+      for (const symbol of symbolList) {
+        try {
+          const q = await yf.quote(symbol);
+          if (q && q.symbol) quoteResults.push(q);
+        } catch (innerErr) {
+          logger.warn('Yahoo Finance quote failed for symbol', { symbol, error: innerErr.message });
+        }
+      }
+      quotes = quoteResults;
+    }
+
+    const quoteArray = Array.isArray(quotes) ? quotes : [quotes];
+    const filtered = quoteArray
       .filter(q => {
         if (!q || !q.symbol) return false;
-        // Always allow crypto for 24/7 coverage
         if (q.symbol.endsWith('-USD')) return true;
-        // Strict filters for stocks
         if (!q.regularMarketPrice || q.regularMarketPrice < 5 || q.regularMarketPrice > 2000) return false;
         if (!q.averageDailyVolume3Month || q.averageDailyVolume3Month < 1000000) return false;
         return true;
       })
-      // Prioritize Crypto symbols to the top for weekend trading
       .sort((a, b) => {
         const aIsCrypto = a.symbol.endsWith('-USD');
         const bIsCrypto = b.symbol.endsWith('-USD');
@@ -72,11 +79,11 @@ async function scanForOptimalSymbols() {
         if (!aIsCrypto && bIsCrypto) return 1;
         return 0;
       })
-      .slice(0, 8) 
+      .slice(0, 8)
       .map(q => q.symbol);
 
     logger.info('Optimal trading candidates discovered', { count: filtered.length, symbols: filtered });
-    return filtered.length > 0 ? filtered : ['AAPL', 'TSLA', 'NVDA', 'COIN', 'MSTR']; // Robust Fallback
+    return filtered.length > 0 ? filtered : ['AAPL', 'TSLA', 'NVDA', 'COIN', 'MSTR'];
 
   } catch (err) {
     logger.error('Scanner failed — falling back to staples', { error: err.message });

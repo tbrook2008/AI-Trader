@@ -120,22 +120,41 @@ async function getQuote(symbol) {
 async function getOHLCVWithIndicators(symbol, period1, interval = '1d') {
   try {
     const yf = await getYF();
-    // yf.chart is more robust than yf.historical in recent versions
-    const chart = await yf.chart(symbol, { period1, interval });
-    
-    if (!chart || !chart.quotes || chart.quotes.length < 30) {
-      logger.warn('Insufficient bars for indicators', { symbol, count: chart?.quotes?.length });
-      return null;
+    let bars = null;
+
+    try {
+      const chart = await yf.chart(symbol, { period1, interval });
+      if (chart?.quotes?.length >= 30) {
+        bars = chart.quotes.map(q => ({
+          date:   q.date,
+          open:   q.open,
+          high:   q.high,
+          low:    q.low,
+          close:  q.close,
+          volume: q.volume
+        }));
+      }
+    } catch (chartErr) {
+      logger.warn('Yahoo Finance chart failed, trying historical fallback', { symbol, error: chartErr.message });
+      if (typeof yf.historical === 'function') {
+        const history = await yf.historical(symbol, { period1, interval });
+        if (Array.isArray(history) && history.length >= 30) {
+          bars = history.map(q => ({
+            date:   q.date,
+            open:   q.open,
+            high:   q.high,
+            low:    q.low,
+            close:  q.close,
+            volume: q.volume
+          }));
+        }
+      }
     }
 
-    const bars = chart.quotes.map(q => ({
-      date:   q.date,
-      open:   q.open,
-      high:   q.high,
-      low:    q.low,
-      close:  q.close,
-      volume: q.volume
-    }));
+    if (!bars || bars.length < 30) {
+      logger.warn('Insufficient bars for indicators', { symbol, count: bars?.length });
+      return null;
+    }
 
     const closes = bars.map(b => b.close);
     const ema9   = computeEMA(closes, 9);
