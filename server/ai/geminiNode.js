@@ -68,6 +68,7 @@ Return ONLY this JSON structure:
     return batch.map(item => ({
       symbol: item.symbol,
       approved: false,
+      score: 0,
       reason: 'Gemini verification failed',
       refinement_feedback: err.message
     }));

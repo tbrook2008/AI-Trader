@@ -91,7 +91,7 @@ async function runLoop() {
         geminiScore: finalDecision.score,
         geminiThesis: finalDecision.reason,
         ollamaSentiment: candidate.ollamaResult.sentiment,
-        compositeScore: finalDecision.score,
+        compositeScore: finalDecision.score ?? 0,
         approved: finalDecision.approved,
         direction: finalDecision.direction,
         reason: finalDecision.reason,

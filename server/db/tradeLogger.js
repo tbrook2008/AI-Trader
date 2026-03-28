@@ -25,7 +25,7 @@ function logDecision({ symbol, geminiScore, geminiThesis, ollamaSentiment, deeps
     timestamp, symbol,
     geminiScore ?? null, geminiThesis ?? null,
     ollamaSentiment ?? null, deepseekScore ?? null,
-    compositeScore, approved ? 1 : 0,
+    compositeScore ?? 0, approved ? 1 : 0,
     direction ?? null, reason ?? null,
     nodesUsed ? JSON.stringify(nodesUsed) : null
   );
