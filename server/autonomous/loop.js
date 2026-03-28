@@ -47,39 +47,62 @@ async function runLoop() {
 
     if (candidates.length === 0) return { skipped: true, reason: 'No Ollama candidates' };
 
-    // 4. BATCH GEMINI VERIFICATION PHASE (The "Ultimate Judge")
-    logger.info(`Sending batch of ${candidates.length} to Gemini for verification...`);
-    const verificationResults = await geminiNode.verifyBatch(candidates);
+    // 4. BATCH GEMINI VERIFICATION PHASE 1 (Initial Judge)
+    logger.info(`Sending batch of ${candidates.length} to Gemini for verification (Pass 1)...`);
+    let initialDecisions = await geminiNode.verifyBatch(candidates);
 
-    // 5. REFINEMENT & EXECUTION PHASE
+    // 5. REFINEMENT PHASE (Ollama + Gemini Pass 2)
+    const refinedCandidates = [];
+    for (const decision of initialDecisions) {
+      if (!decision.approved && decision.refinement_feedback) {
+        const candidate = candidates.find(c => c.symbol === decision.symbol);
+        if (candidate) {
+          logger.info(`Triggering refinement for ${decision.symbol} based on Gemini feedback...`);
+          const refinedResult = await ollamaNode.analyze(candidate.bundle, decision.refinement_feedback);
+          if (refinedResult) {
+            refinedCandidates.push({ 
+              symbol: candidate.symbol, 
+              bundle: candidate.bundle, 
+              ollamaResult: refinedResult,
+              previousFeedback: decision.refinement_feedback 
+            });
+          }
+        }
+      }
+    }
+
+    let finalDecisions = [...initialDecisions];
+
+    if (refinedCandidates.length > 0) {
+      logger.info(`Sending ${refinedCandidates.length} refined candidates to Gemini for final agreement (Pass 2)...`);
+      const secondaryDecisions = await geminiNode.verifyBatch(refinedCandidates);
+      
+      // Merge results: replace initial rejections with secondary decisions if they exist
+      for (const sec of secondaryDecisions) {
+        const idx = finalDecisions.findIndex(d => d.symbol === sec.symbol);
+        if (idx !== -1) {
+          logger.info(`Updating decision for ${sec.symbol} after refinement. Approved: ${sec.approved}`);
+          finalDecisions[idx] = sec;
+        }
+      }
+    }
+
+    // 6. EXECUTION PHASE
     const finalResults = [];
-    for (const verify of verificationResults) {
-      const candidate = candidates.find(c => c.symbol === verify.symbol);
+    for (const decision of finalDecisions) {
+      const candidate = candidates.find(c => c.symbol === decision.symbol);
       if (!candidate) continue;
 
-      let finalDecision = verify;
-
-      // REFINEMENT: If Gemini rejected but provided feedback, let Ollama try one more time
-      if (!verify.approved && verify.refinement_feedback) {
-        logger.info(`Triggering refinement for ${verify.symbol} based on Gemini feedback...`);
-        const refinedResult = await ollamaNode.analyze(candidate.bundle, verify.refinement_feedback);
-        
-        // If refinement significantly changed Ollama's sentiment, we could re-verify, 
-        // but for now, we follow the "Judge's" original rejection unless it was a soft 'verify again'
-        // In this implementation, we simply log the refinement for future learning.
-      }
-
-      // 6. EXECUTION
       let executed = false;
       let tradeResult = null;
 
-      if (finalDecision.approved && finalDecision.direction !== 'NO_TRADE') {
+      if (decision.approved && decision.direction !== 'NO_TRADE') {
         tradeResult = await execute({ 
           bundle: candidate.bundle, 
           consensus: { 
             approved: true, 
-            direction: finalDecision.direction, 
-            compositeScore: finalDecision.score 
+            direction: decision.direction, 
+            compositeScore: decision.score ?? 0 
           } 
         });
         executed = tradeResult.executed;
@@ -88,17 +111,17 @@ async function runLoop() {
       // Log decision
       logDecision({
         symbol: candidate.symbol,
-        geminiScore: finalDecision.score,
-        geminiThesis: finalDecision.reason,
+        geminiScore: decision.score,
+        geminiThesis: decision.reason,
         ollamaSentiment: candidate.ollamaResult.sentiment,
-        compositeScore: finalDecision.score ?? 0,
-        approved: finalDecision.approved,
-        direction: finalDecision.direction,
-        reason: finalDecision.reason,
-        nodesUsed: 2
+        compositeScore: decision.score ?? 0,
+        approved: decision.approved,
+        direction: decision.direction,
+        reason: decision.reason,
+        nodesUsed: refinedCandidates.some(rc => rc.symbol === decision.symbol) ? 3 : 2
       });
 
-      finalResults.push({ symbol: candidate.symbol, approved: finalDecision.approved, executed });
+      finalResults.push({ symbol: candidate.symbol, approved: decision.approved, executed });
     }
 
     setState('last_run', new Date().toISOString());

@@ -28,15 +28,14 @@ Each trade was initially analyzed by a local instance of Llama-3.
 
 DATA BATCH:
 ${batch.map((item, i) => `
---- ITEM ${i + 1}: ${item.symbol} ---
-PRICE: ${item.bundle.price} (${item.bundle.trend})
-OLLAMA SENTIMENT: ${item.ollamaResult?.sentiment}
-OLLAMA SUMMARY: ${item.ollamaResult?.summary}
-INDICATORS: RSI=${item.bundle.rsi14}, EMA9=${item.bundle.ema9}, EMA21=${item.bundle.ema21}
-NEWS SUMMARY: ${item.bundle.headlines.slice(0, 3).map(h => h.title).join(' | ')}
+ITEM ${i + 1}: ${item.symbol} | PRICE: ${item.bundle.price} (${item.bundle.trend})
+OLLAMA SENTIMENT: ${item.ollamaResult?.sentiment} | SUMMARY: ${item.ollamaResult?.summary}
+INDICATORS: RSI=${item.bundle.rsi14}, EMA9=${item.bundle.ema9}/${item.bundle.ema21}
+TOP NEWS: ${item.bundle.headlines[0]?.title || 'None'}
 `).join('\n')}
 
 For each symbol, return a decision. 
+If 'approved' is false but technicals and sentiment look close, provide 'refinement_feedback' (1 sentence) for Ollama to re-check.
 Return ONLY this JSON structure:
 {
   "results": [
@@ -46,7 +45,7 @@ Return ONLY this JSON structure:
       "direction": <"LONG" | "SHORT" | "NO_TRADE">,
       "score": <integer -100 to 100>,
       "reason": "<short justification>",
-      "refinement_feedback": "<if approved=false, provide 1 sentence on what Ollama missed or should re-check>"
+      "refinement_feedback": "<optional - what should Ollama re-investigate?>"
     },
     ...
   ]
