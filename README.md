@@ -191,7 +191,7 @@ Every 15 minutes:
 
 ## Related Projects
 
-- **Betting Analysis** (`/Users/tbrook/Desktop/Betting Analysis`) — Python MLB/NBA prop betting engine. Same conceptual architecture (EV scoring, Kelly sizing, confidence models). These two systems are designed to eventually share a unified dashboard.
+- **Betting Analysis** — Python MLB/NBA prop betting engine. Same conceptual architecture (EV scoring, Kelly sizing, confidence models). These two systems are designed to eventually share a unified dashboard.
 
 ---
 
