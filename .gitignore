@@ -1,11 +1,11 @@
 .env
 node_modules/
 logs/
-data/*.sqlite
+data/trader.sqlite*
 *.log
 .DS_Store
 Thumbs.db
-data/trader.sqlite
-data/trader.sqlite-shm
-data/trader.sqlite-wal
-node_modules/
+dist/
+build/
+.vscode/
+.idea/
