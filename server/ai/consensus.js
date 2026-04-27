@@ -1,13 +1,12 @@
 require('dotenv').config();
 const geminiNode   = require('./geminiNode');
 const ollamaNode   = require('./ollamaNode');
-const deepseekNode = require('./deepseekNode');
+// DeepSeek node removed — running 2-node consensus (Gemini + Ollama)
 const logger       = require('../utils/logger');
 
 const WEIGHTS = {
-  gemini:   parseFloat(process.env.WEIGHT_GEMINI   || '0.40'),
-  ollama:   parseFloat(process.env.WEIGHT_OLLAMA   || '0.25'),
-  deepseek: parseFloat(process.env.WEIGHT_DEEPSEEK || '0.35'),
+  gemini: parseFloat(process.env.WEIGHT_GEMINI || '0.65'),
+  ollama: parseFloat(process.env.WEIGHT_OLLAMA || '0.35'),
 };
 
 const APPROVAL_THRESHOLD = parseFloat(process.env.APPROVAL_THRESHOLD || '55');
@@ -58,19 +57,15 @@ function resolveDirection(nodeResults) {
 async function runConsensus(bundle) {
   logger.info('Starting consensus pipeline', { symbol: bundle.symbol });
 
-  // Step 1: Gemini (technical)
+  // Node 1: Gemini — technical analysis
   const geminiResult = await geminiNode.analyze(bundle);
 
-  // Step 2: Ollama (sentiment) — runs independently
+  // Node 2: Ollama — news sentiment (excluded gracefully if offline)
   const ollamaResult = await ollamaNode.analyze(bundle);
 
-  // Step 3: DeepSeek (macro/risk) — receives Gemini + Ollama context
-  const deepseekResult = await deepseekNode.analyze(bundle, geminiResult, ollamaResult);
-
   const rawScores = {
-    gemini:   geminiResult?.score ?? null,
-    ollama:   normalizeOllama(ollamaResult?.sentiment),
-    deepseek: deepseekResult?.score ?? null,
+    gemini: geminiResult?.score ?? null,
+    ollama: normalizeOllama(ollamaResult?.sentiment),
   };
 
   const info = redistributeWeights(rawScores);
@@ -81,7 +76,7 @@ async function runConsensus(bundle) {
       reason: 'Insufficient node responses (< 2)',
       compositeScore: 0,
       direction: 'NO_TRADE',
-      nodeResults: { gemini: geminiResult, ollama: ollamaResult, deepseek: deepseekResult },
+      nodeResults: { gemini: geminiResult, ollama: ollamaResult },
     };
   }
 
@@ -96,7 +91,7 @@ async function runConsensus(bundle) {
 
   const absScore  = Math.abs(compositeScore);
   const approved  = absScore >= APPROVAL_THRESHOLD;
-  const direction = approved ? resolveDirection({ gemini: geminiResult, ollama: ollamaResult, deepseek: deepseekResult }) : 'NO_TRADE';
+  const direction = approved ? resolveDirection({ gemini: geminiResult, ollama: ollamaResult }) : 'NO_TRADE';
 
   const result = {
     approved,
@@ -107,9 +102,8 @@ async function runConsensus(bundle) {
     adjustedWeights,
     rawScores,
     nodeResults: {
-      gemini:   geminiResult,
-      ollama:   ollamaResult,
-      deepseek: deepseekResult,
+      gemini: geminiResult,
+      ollama: ollamaResult,
     },
     reason: approved
       ? `Score ${compositeScore} ≥ threshold ${APPROVAL_THRESHOLD} → ${direction}`

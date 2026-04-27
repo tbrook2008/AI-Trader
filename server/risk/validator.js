@@ -15,11 +15,12 @@ const MAX_DAILY_LOSS   = parseFloat(process.env.MAX_DAILY_LOSS_PCT        || '0.
  * Run all 10 pre-trade safety checks.
  * Returns { passed: boolean, failed: string[], checks: object[] }
  */
-async function runChecks({ consensus, symbol, positionDollars, alpacaAccount, openPositions }) {
+async function runChecks({ consensus, symbol, positionDollars, alpacaAccount, openPositions, liveBalance = null }) {
   const isLive      = (process.env.TRADING_MODE || 'paper') === 'live';
-  const balance     = isLive
+  // Use live balance from Alpaca API if provided; fall back to env for test scripts
+  const balance     = liveBalance ?? (isLive
     ? parseFloat(process.env.LIVE_ACCOUNT_BALANCE  || '5000')
-    : parseFloat(process.env.PAPER_ACCOUNT_BALANCE || '100000');
+    : parseFloat(process.env.PAPER_ACCOUNT_BALANCE || '100000'));
   const dailyPnl    = getDailyPnl();
   const consecLoss  = parseInt(getState('consecutive_losses') || '0');
   const lastRunStr  = getState('last_run') || '';

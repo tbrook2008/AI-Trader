@@ -5,3 +5,7 @@ data/*.sqlite
 *.log
 .DS_Store
 Thumbs.db
+data/trader.sqlite
+data/trader.sqlite-shm
+data/trader.sqlite-wal
+node_modules/

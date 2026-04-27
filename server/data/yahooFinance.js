@@ -2,8 +2,6 @@ require('dotenv').config();
 const yahooFinance = require('yahoo-finance2').default;
 const logger = require('../utils/logger');
 
-// Suppress yahoo-finance2 validation warnings in production
-yahooFinance.suppressNotices(['yahooSurvey']);
 
 /**
  * Compute EMA for an array of closing prices.
@@ -75,25 +73,39 @@ function detectRegime(closes, bars) {
 /**
  * Get latest quote for a symbol.
  */
-async function getQuote(symbol) {
-  try {
-    const q = await yahooFinance.quote(symbol);
-    return {
-      symbol: q.symbol,
-      price: q.regularMarketPrice,
-      change: q.regularMarketChange,
-      changePct: q.regularMarketChangePercent,
-      volume: q.regularMarketVolume,
-      high: q.regularMarketDayHigh,
-      low: q.regularMarketDayLow,
-      open: q.regularMarketOpen,
-      prevClose: q.regularMarketPreviousClose,
-      marketCap: q.marketCap,
-      currency: q.currency,
-    };
-  } catch (err) {
-    logger.error('Yahoo Finance quote error', { symbol, error: err.message });
-    throw err;
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+/**
+ * Get latest quote — with exponential backoff on rate-limit (429).
+ */
+async function getQuote(symbol, retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const q = await yahooFinance.quote(symbol);
+      return {
+        symbol:    q.symbol,
+        price:     q.regularMarketPrice,
+        change:    q.regularMarketChange,
+        changePct: q.regularMarketChangePercent,
+        volume:    q.regularMarketVolume,
+        high:      q.regularMarketDayHigh,
+        low:       q.regularMarketDayLow,
+        open:      q.regularMarketOpen,
+        prevClose: q.regularMarketPreviousClose,
+        marketCap: q.marketCap,
+        currency:  q.currency,
+      };
+    } catch (err) {
+      const isRateLimit = err.message?.includes('Too Many Requests') || err.message?.includes('429');
+      if (isRateLimit && attempt < retries) {
+        const delay = Math.pow(2, attempt) * 2000;
+        logger.warn(`Yahoo Finance rate limited — retrying in ${delay / 1000}s`, { symbol, attempt });
+        await sleep(delay);
+      } else {
+        logger.error('Yahoo Finance quote error', { symbol, error: err.message });
+        throw err;
+      }
+    }
   }
 }
 

@@ -55,12 +55,16 @@ function calculateQty(positionDollars, price) {
 
 /**
  * Get position size for a symbol using strategy memory stats.
+ * @param {string} symbol
+ * @param {number} currentPrice
+ * @param {number|null} liveBalance  Pass the real Alpaca portfolio_value. Falls back to env if omitted.
  */
-function getPositionSize(symbol, currentPrice) {
+function getPositionSize(symbol, currentPrice, liveBalance = null) {
+  // Prefer the live balance passed in from tradeExecutor (fetched from Alpaca API)
   const isLive = (process.env.TRADING_MODE || 'paper') === 'live';
-  const balance = isLive
+  const balance = liveBalance ?? (isLive
     ? parseFloat(process.env.LIVE_ACCOUNT_BALANCE  || '5000')
-    : parseFloat(process.env.PAPER_ACCOUNT_BALANCE || '100000');
+    : parseFloat(process.env.PAPER_ACCOUNT_BALANCE || '100000'));
 
   const maxPct = parseFloat(process.env.MAX_POSITION_PCT || '0.10');
   const maxPosition = balance * maxPct;
