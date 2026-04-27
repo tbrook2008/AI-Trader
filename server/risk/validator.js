@@ -2,6 +2,7 @@ require('dotenv').config();
 const killSwitch = require('./killSwitch');
 const { getState } = require('../db/schema');
 const { getDailyPnl } = require('../db/tradeLogger');
+const { isCryptoSymbol } = require('../data/dataAggregator');
 const logger = require('../utils/logger');
 
 const MIN_CONFIDENCE   = parseFloat(process.env.MIN_AI_CONFIDENCE       || '55');
@@ -80,10 +81,29 @@ async function runChecks({ consensus, symbol, positionDollars, alpacaAccount, op
     },
     {
       name: 'No existing open position',
-      passed: !openPositions?.some(p => p.symbol === symbol || p.symbol === symbol.replace('-', '/')),
+      passed: !openPositions?.some(p => {
+        // Normalize both sides: Alpaca may return BTC/USD or BTCUSD for crypto
+        const normalize = (s) => (s || '').replace(/[/-]/, '').toUpperCase();
+        return normalize(p.symbol) === normalize(symbol);
+      }),
       detail: `Checking ${symbol} in ${openPositions?.length ?? 0} open positions`,
     },
   ];
+
+  // ── PDT Rule Warning (stocks under $25k) ──────────────────────────────────
+  // Pattern Day Trader: >3 round-trip day trades in 5 days on accounts < $25k
+  // This does NOT block the trade (paper trading is fine) but warns loudly.
+  if (!isCryptoSymbol(symbol) && balance < 25000) {
+    const mode = process.env.TRADING_MODE || 'paper';
+    if (mode === 'live') {
+      logger.warn('⚠️  PDT RULE RISK — stock account under $25,000', {
+        symbol,
+        balance,
+        warning: 'More than 3 day-trades in 5 days will flag your Alpaca account.',
+        action:  'Consider switching to WATCHED_SYMBOLS=BTC/USD,ETH/USD for crypto (no PDT rule).',
+      });
+    }
+  }
 
   const failed = checks.filter(c => !c.passed).map(c => c.name);
   const passed = failed.length === 0;

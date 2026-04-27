@@ -8,7 +8,7 @@
  * - Live balance fetched from Alpaca for kill-switch check
  */
 require('dotenv').config();
-const { aggregate }    = require('../data/dataAggregator');
+const { aggregate, isCryptoSymbol } = require('../data/dataAggregator');
 const { runConsensus } = require('../ai/consensus');
 const { execute }      = require('../execution/tradeExecutor');
 const alpaca           = require('../execution/alpacaClient');
@@ -27,30 +27,30 @@ const MAX_HOLD_DAYS  = parseInt(process.env.MAX_HOLD_DAYS || '3');   // Auto-exi
 
 /**
  * Returns true if NYSE equity market is currently open.
- * Crypto trades 24/7 — pass isCrypto=true to skip this check.
+ * Pass symbol to auto-detect crypto (always open).
  */
-function isMarketOpen(isCrypto = false) {
-  if (isCrypto) return true;
+function isMarketOpen(symbol) {
+  // Crypto trades 24/7 — always open
+  if (isCryptoSymbol(symbol)) return true;
 
+  // Stocks: NYSE 9:30 AM – 4:00 PM ET, Mon–Fri only
   const now = new Date();
-  // Convert to US Eastern Time
-  const et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const day  = et.getDay();   // 0=Sun, 6=Sat
+  const et  = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const day  = et.getDay();
   const hour = et.getHours();
   const min  = et.getMinutes();
 
   if (day === 0 || day === 6) return false;  // Weekend
-
   const totalMins = hour * 60 + min;
   return totalMins >= 570 && totalMins < 960; // 9:30 AM → 4:00 PM
 }
 
 /**
- * Check if any symbol in the watchlist is crypto.
+ * Check if any symbol in the watchlist can be traded RIGHT NOW.
+ * Crypto: always yes. Stocks: only during NYSE hours.
  */
-function hasCryptoSymbol() {
-  const cryptos = ['BTC', 'ETH', 'SOL', 'ADA', 'DOGE', 'AVAX', 'DOT', 'LINK', 'LTC'];
-  return SYMBOLS.some(s => cryptos.includes(s.split(/[-/]/)[0].toUpperCase()));
+function hasAnyTradableSymbol() {
+  return SYMBOLS.some(s => isMarketOpen(s));
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -102,19 +102,16 @@ async function checkAndExitPositions() {
 async function runLoop() {
   logger.info('═══ Loop cycle starting ═══', { symbols: SYMBOLS, time: new Date().toISOString() });
 
-  // Market hours check — skip equity analysis outside trading hours
-  const cryptoOnly = hasCryptoSymbol() && SYMBOLS.every(s => {
-    const cryptos = ['BTC', 'ETH', 'SOL', 'ADA', 'DOGE', 'AVAX', 'DOT', 'LINK', 'LTC'];
-    return cryptos.includes(s.split(/[-/]/)[0].toUpperCase());
-  });
-
-  if (!isMarketOpen() && !cryptoOnly) {
-    logger.info('Market closed — skipping equity analysis cycle', {
-      localTime: new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }) + ' ET',
+  // Check if anything at all is tradable right now
+  if (!hasAnyTradableSymbol()) {
+    const etTime = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+    logger.info('All symbols outside trading hours — skipping analysis cycle', {
+      time: etTime + ' ET',
+      symbols: SYMBOLS,
+      note: 'Crypto symbols would not be skipped — check WATCHED_SYMBOLS in .env',
     });
-    // Still run position exit check even outside hours (for safety)
     await checkAndExitPositions();
-    return { skipped: true, reason: 'Market closed' };
+    return { skipped: true, reason: 'All symbols outside trading hours' };
   }
 
   // Kill switch check
@@ -144,9 +141,17 @@ async function runLoop() {
   // Check and exit stale/losing positions first
   await checkAndExitPositions();
 
-  // Analyse each symbol
+  // Analyse each symbol — crypto runs anytime, stocks only during NYSE hours
   const cycleResults = [];
   for (const symbol of SYMBOLS) {
+    if (!isMarketOpen(symbol)) {
+      logger.info(`Skipping ${symbol} — market closed`, {
+        symbol,
+        isCrypto: isCryptoSymbol(symbol),
+        hint: 'This is a stock symbol outside NYSE hours',
+      });
+      continue;
+    }
     logger.info(`─── Processing ${symbol} ───`);
     const result = await processSymbol(symbol);
     cycleResults.push({ symbol, ...result });

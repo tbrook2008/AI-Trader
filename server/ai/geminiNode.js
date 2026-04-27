@@ -22,8 +22,15 @@ async function analyze(bundle) {
     generationConfig: { responseMimeType: 'application/json' },
   });
 
+  const isCrypto = bundle.isCrypto ?? false;
+  const assetType = isCrypto
+    ? 'CRYPTOCURRENCY (24/7 market, high volatility, no PDT restrictions)'
+    : 'EQUITY (NYSE/NASDAQ, Mon–Fri 9:30–16:00 ET)';
+
   const prompt = `
 Analyze this market data for ${bundle.symbol} and return a JSON trade thesis.
+
+ASSET TYPE: ${assetType}
 
 MARKET DATA:
 - Current Price:   ${bundle.price} ${bundle.changePct >= 0 ? '+' : ''}${bundle.changePct?.toFixed(2)}%
@@ -38,6 +45,7 @@ MARKET DATA:
 RECENT HEADLINES (${bundle.headlines.length}):
 ${bundle.headlines.slice(0, 6).map((h, i) => `${i + 1}. [${h.source}] ${h.title}`).join('\n')}
 
+${isCrypto ? 'NOTE: This is a crypto asset. Consider on-chain sentiment, regulatory news, and broader crypto market conditions (BTC dominance, ETH gas fees) in your analysis.\n' : ''}
 Return ONLY this JSON (no markdown, no explanation):
 {
   "score": <integer -100 to 100, negative=bearish, positive=bullish>,
@@ -49,6 +57,7 @@ Return ONLY this JSON (no markdown, no explanation):
   "stop": <stop loss price or null>,
   "key_risk": <one sentence on biggest risk>
 }`;
+
 
   try {
     const result = await model.generateContent(prompt);
