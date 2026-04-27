@@ -9,6 +9,13 @@ function getPeriod1() {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * Staggered sleep to avoid Yahoo Finance rate limits when scanning many symbols.
+ * Configurable via SYMBOL_FETCH_DELAY_MS env (default 3000ms between symbols).
+ */
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const FETCH_DELAY_MS = parseInt(process.env.SYMBOL_FETCH_DELAY_MS || '3000');
+
 // ─────────────────────────────────────────────────────────────
 // Symbol normalization helpers
 // Internal format: BTC/USD (Alpaca crypto format)

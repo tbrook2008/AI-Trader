@@ -3,9 +3,12 @@
  * Main trading cycle — runs on cron schedule.
  *
  * Changes from original:
- * - Market hours guard (NYSE 9:30–16:00 ET, skip weekends)
- * - Position exit loop (checks open Alpaca positions each cycle)
+ * - Market hours guard (NYSE 9:30–16:00 ET, skip weekends; crypto runs 24/7)
+ * - Per-symbol market hours: mixed watchlists work (BTC runs at 3am, SPY waits)
+ * - Position exit loop (emergency stop + max hold days)
  * - Live balance fetched from Alpaca for kill-switch check
+ * - Correlation guard: cap concurrent open positions to avoid correlated blow-up
+ * - Staggered symbol fetching to avoid Yahoo Finance rate limits
  */
 require('dotenv').config();
 const { aggregate, isCryptoSymbol } = require('../data/dataAggregator');
@@ -18,8 +21,12 @@ const killSwitch        = require('../risk/killSwitch');
 const { setState }     = require('../db/schema');
 const logger           = require('../utils/logger');
 
-const SYMBOLS        = (process.env.WATCHED_SYMBOLS || 'SPY').split(',').map(s => s.trim());
-const MAX_HOLD_DAYS  = parseInt(process.env.MAX_HOLD_DAYS || '3');   // Auto-exit after N days
+const SYMBOLS              = (process.env.WATCHED_SYMBOLS || 'BTC/USD,ETH/USD,SOL/USD').split(',').map(s => s.trim());
+const MAX_HOLD_DAYS        = parseInt(process.env.MAX_HOLD_DAYS            || '3');  // Auto-exit after N days
+const MAX_CONCURRENT_POS   = parseInt(process.env.MAX_CONCURRENT_POSITIONS || '3');  // Max open positions at once
+const SYMBOL_STAGGER_MS    = parseInt(process.env.SYMBOL_FETCH_DELAY_MS    || '3000'); // Delay between fetches
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // ─────────────────────────────────────────────────────────────
 // Market Hours Guard
@@ -59,8 +66,7 @@ function hasAnyTradableSymbol() {
 
 /**
  * Check all open Alpaca positions and close any that:
- * 1. Have been held longer than MAX_HOLD_DAYS (time-based exit)
- * 2. Are in significant loss beyond stop (safety net if bracket failed)
+ * 1. Are in significant loss beyond stop (safety net if bracket order failed)
  */
 async function checkAndExitPositions() {
   let positions;
@@ -68,30 +74,38 @@ async function checkAndExitPositions() {
     positions = await alpaca.getOpenPositions();
   } catch (err) {
     logger.error('Failed to fetch positions for exit check', { error: err.message });
-    return;
+    return [];
   }
 
-  if (positions.length === 0) return;
+  if (positions.length === 0) return [];
 
-  const EMERGENCY_STOP = parseFloat(process.env.EMERGENCY_STOP_PCT || '0.05'); // 5% max loss
+  const EMERGENCY_STOP = parseFloat(process.env.EMERGENCY_STOP_PCT || '0.07');
 
   for (const pos of positions) {
     const lossExceeded = pos.unrealizedPLPct < -EMERGENCY_STOP;
 
     if (lossExceeded) {
       logger.warn('🚨 Emergency stop triggered — closing position', {
-        symbol: pos.symbol,
-        unrealizedPL: pos.unrealizedPL.toFixed(2),
-        unrealizedPLPct: (pos.unrealizedPLPct * 100).toFixed(2) + '%',
+        symbol:           pos.symbol,
+        unrealizedPL:     pos.unrealizedPL.toFixed(2),
+        unrealizedPLPct:  (pos.unrealizedPLPct * 100).toFixed(2) + '%',
+        emergencyStopPct: (EMERGENCY_STOP * 100).toFixed(0) + '%',
       });
       await alpaca.closePosition(pos.symbol);
     } else {
       logger.info('Position check — holding', {
-        symbol: pos.symbol,
-        unrealizedPL: pos.unrealizedPL.toFixed(2),
+        symbol:          pos.symbol,
+        unrealizedPL:    pos.unrealizedPL.toFixed(2),
         unrealizedPLPct: (pos.unrealizedPLPct * 100).toFixed(2) + '%',
       });
     }
+  }
+
+  // Return current open positions after exits
+  try {
+    return await alpaca.getOpenPositions();
+  } catch {
+    return [];
   }
 }
 
@@ -138,11 +152,20 @@ async function runLoop() {
     return { skipped: true, reason: 'Daily loss limit hit' };
   }
 
-  // Check and exit stale/losing positions first
-  await checkAndExitPositions();
+  // Check and exit losing positions first — returns updated open positions list
+  const currentPositions = await checkAndExitPositions();
+  const openPositionCount = currentPositions.length;
+
+  logger.info('Correlation check', {
+    openPositions: openPositionCount,
+    maxAllowed:    MAX_CONCURRENT_POS,
+    canOpenMore:   openPositionCount < MAX_CONCURRENT_POS,
+  });
 
   // Analyse each symbol — crypto runs anytime, stocks only during NYSE hours
   const cycleResults = [];
+  let newTradesThisCycle = 0;
+
   for (const symbol of SYMBOLS) {
     if (!isMarketOpen(symbol)) {
       logger.info(`Skipping ${symbol} — market closed`, {
@@ -152,21 +175,47 @@ async function runLoop() {
       });
       continue;
     }
+
+    // ── Correlation Guard ───────────────────────────────────────────────────
+    // Stop opening new positions once we hit the concurrent cap.
+    // Existing positions still get their exit checks every cycle above.
+    const totalOpen = openPositionCount + newTradesThisCycle;
+    if (totalOpen >= MAX_CONCURRENT_POS) {
+      logger.info(`Correlation cap reached — skipping new analysis for ${symbol}`, {
+        symbol,
+        openPositions: totalOpen,
+        maxConcurrent: MAX_CONCURRENT_POS,
+        tip: 'Raise MAX_CONCURRENT_POSITIONS in .env to allow more simultaneous positions',
+      });
+      continue;
+    }
+
     logger.info(`─── Processing ${symbol} ───`);
     const result = await processSymbol(symbol);
     cycleResults.push({ symbol, ...result });
-    // Respect rate limits between symbols
-    await new Promise(r => setTimeout(r, 2000));
+
+    if (result.executed) newTradesThisCycle++;
+
+    // Staggered delay — avoids Yahoo Finance 429s when scanning 8+ symbols
+    const isLast = SYMBOLS.indexOf(symbol) === SYMBOLS.length - 1;
+    if (!isLast) await sleep(SYMBOL_STAGGER_MS);
   }
 
   setState('last_run', new Date().toISOString());
 
   const approved = cycleResults.filter(r => r.approved).length;
   const executed = cycleResults.filter(r => r.executed).length;
-  logger.info('═══ Loop cycle complete ═══', { total: SYMBOLS.length, approved, executed });
+  logger.info('═══ Loop cycle complete ═══', {
+    symbolsWatched: SYMBOLS.length,
+    symbolsScanned: cycleResults.length,
+    approved,
+    executed,
+    openPositionsNow: openPositionCount + executed,
+  });
 
   return { cycleResults, approved, executed };
 }
+
 
 // ─────────────────────────────────────────────────────────────
 // Per-Symbol Pipeline
