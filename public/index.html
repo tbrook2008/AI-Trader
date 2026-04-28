@@ -198,6 +198,25 @@
       padding-top: 10px;
     }
 
+    /* Terminal */
+    .terminal {
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: #a3a3a3;
+      height: 300px;
+      overflow-y: auto;
+      line-height: 1.4;
+      box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
+    }
+    .terminal-line { margin-bottom: 4px; word-wrap: break-word; }
+    .terminal-info { color: #3b82f6; }
+    .terminal-warn { color: #f59e0b; }
+    .terminal-error { color: #ef4444; }
+
     /* Minimal Table */
     table { width: 100%; border-collapse: collapse; }
     th {
@@ -281,6 +300,15 @@
       </div>
     </div>
   </div>
+
+  <div style="margin-top: 40px;">
+    <div class="section-title">
+      Live System Terminal <span style="color:var(--green); animation: pulse 2s infinite">●</span>
+    </div>
+    <div class="terminal" id="terminal-out">
+      <div class="terminal-line" style="color:var(--text-muted)">Connecting to AI engine...</div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -338,18 +366,18 @@
       const time = new Date(d.timestamp).toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
       const score = d.composite_score?.toFixed(1) || '—';
       
-      return \`
-        <div class="card" style="border-left: 2px solid \${d.approved ? 'var(--green)' : 'var(--border)'}">
+      return `
+        <div class="card" style="border-left: 2px solid ${d.approved ? 'var(--green)' : 'var(--border)'}">
           <div class="card-row">
-            <span class="symbol">\${d.symbol}</span>
-            <span class="time">\${time}</span>
+            <span class="symbol">${d.symbol}</span>
+            <span class="time">${time}</span>
           </div>
           <div class="card-row" style="margin-top: 12px;">
-            <span class="tag \${tagClass}">\${dir}</span>
-            <span style="font-family:'JetBrains Mono'; font-size:11px; color:var(--text-muted)">Score: \${score}</span>
+            <span class="tag ${tagClass}">${dir}</span>
+            <span style="font-family:'JetBrains Mono'; font-size:11px; color:var(--text-muted)">Score: ${score}</span>
           </div>
-          \${d.gemini_thesis ? \`<div class="thesis">\${d.gemini_thesis}</div>\` : ''}
-        </div>\`;
+          ${d.gemini_thesis ? `<div class="thesis">${d.gemini_thesis}</div>` : ''}
+        </div>`;
     }).join('');
   }
 
@@ -362,16 +390,16 @@
 
     $('trades-tbody').innerHTML = trades.map(t => {
       const time = new Date(t.timestamp).toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
-      const pnl = t.pnl != null ? (t.pnl >= 0 ? \`+\$\${t.pnl.toFixed(2)}\` : \`-\$\${Math.abs(t.pnl).toFixed(2)}\`) : '—';
+      const pnl = t.pnl != null ? (t.pnl >= 0 ? `+$${t.pnl.toFixed(2)}` : `-$${Math.abs(t.pnl).toFixed(2)}`) : '—';
       const pnlCl = t.pnl > 0 ? 'val-green' : t.pnl < 0 ? 'val-red' : '';
       const dirCl = t.direction === 'LONG' ? 'val-green' : 'val-red';
       
-      return \`<tr>
-        <td style="color:var(--text-muted)">\${time}</td>
-        <td>\${t.symbol}</td>
-        <td class="\${dirCl}">\${t.direction}</td>
-        <td class="\${pnlCl}">\${pnl}</td>
-      </tr>\`;
+      return `<tr>
+        <td style="color:var(--text-muted)">${time}</td>
+        <td>${t.symbol}</td>
+        <td class="${dirCl}">${t.direction}</td>
+        <td class="${pnlCl}">${pnl}</td>
+      </tr>`;
     }).join('');
   }
 
@@ -385,6 +413,30 @@
     fetchStatus();
   }
 
+  async function fetchLogs() {
+    try {
+      const r = await fetch('/api/logs');
+      const d = await r.json();
+      if (!d.logs || !d.logs.length) return;
+      
+      const term = $('terminal-out');
+      // Only update if content changed to avoid scrolling reset
+      const newHtml = d.logs.map(l => {
+        let cls = '';
+        if (l.includes(' info:')) cls = 'terminal-info';
+        if (l.includes(' warn:')) cls = 'terminal-warn';
+        if (l.includes(' error:')) cls = 'terminal-error';
+        return `<div class="terminal-line ${cls}">${l}</div>`;
+      }).join('');
+      
+      if (term.innerHTML !== newHtml) {
+        const isAtBottom = term.scrollHeight - term.scrollTop <= term.clientHeight + 20;
+        term.innerHTML = newHtml;
+        if (isAtBottom) term.scrollTop = term.scrollHeight;
+      }
+    } catch(e) {}
+  }
+
   async function runNow() {
     $('run-btn').textContent = '...';
     await fetch('/api/run-now', { method: 'POST' });
@@ -393,7 +445,9 @@
 
   function refreshAll() { fetchStatus(); fetchDecisions(); fetchTrades(); }
   refreshAll();
+  fetchLogs();
   setInterval(refreshAll, 10000);
+  setInterval(fetchLogs, 2500); // Poll logs much faster for a live feel
 </script>
 </body>
 </html>

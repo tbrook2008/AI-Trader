@@ -57,22 +57,32 @@ function resolveDirection(nodeResults) {
 async function runConsensus(bundle) {
   logger.info('Starting consensus pipeline', { symbol: bundle.symbol });
 
-  // Node 1: Gemini — technical analysis
-  const geminiResult = await geminiNode.analyze(bundle);
-
-  // Node 2: Ollama — news sentiment (excluded gracefully if offline)
+  // Step 1: Always run Ollama (Local & Free) for news sentiment
   let ollamaResult = await ollamaNode.analyze(bundle);
+  const ollamaScore = normalizeOllama(ollamaResult?.sentiment);
 
-  // --- AI DEBATE REFINEMENT LOOP ---
-  if (geminiResult && ollamaResult) {
-    const geminiScore = geminiResult.score;
-    const ollamaScore = normalizeOllama(ollamaResult.sentiment);
-    
-    // If scores diverge by 50 or more points (e.g., Gemini +30, Ollama -20)
-    if (Math.abs(geminiScore - ollamaScore) >= 50) {
-      logger.info('Significant AI disagreement detected — triggering debate/refinement', { geminiScore, ollamaScore });
-      ollamaResult = await ollamaNode.refine(bundle, ollamaResult, geminiResult);
+  let geminiResult = null;
+
+  // Step 2: Cost-Saving Gate (Conserve Gemini API)
+  // Only call Gemini if Ollama sees strong sentiment OR if there is a clear technical trend.
+  const hasStrongSentiment = ollamaScore !== null && Math.abs(ollamaScore) >= 25;
+  const hasTechnicalTrend = bundle.trend !== 'neutral';
+
+  if (hasStrongSentiment || hasTechnicalTrend) {
+    logger.info('Signal detected (Sentiment or Trend). Calling Gemini for technical confirmation...', { symbol: bundle.symbol, trend: bundle.trend, ollamaScore });
+    geminiResult = await geminiNode.analyze(bundle);
+
+    // --- AI DEBATE REFINEMENT LOOP ---
+    if (geminiResult && ollamaResult) {
+      const geminiScore = geminiResult.score;
+      // If scores diverge by 50 or more points (e.g., Gemini +30, Ollama -20)
+      if (Math.abs(geminiScore - ollamaScore) >= 50) {
+        logger.info('Significant AI disagreement detected — triggering debate/refinement', { geminiScore, ollamaScore });
+        ollamaResult = await ollamaNode.refine(bundle, ollamaResult, geminiResult);
+      }
     }
+  } else {
+    logger.info('Market is flat and news is neutral. Skipping Gemini to conserve API costs.', { symbol: bundle.symbol });
   }
 
   const rawScores = {
@@ -82,10 +92,10 @@ async function runConsensus(bundle) {
 
   const info = redistributeWeights(rawScores);
   if (!info) {
-    logger.warn('Consensus aborted — fewer than 2 nodes responded', { symbol: bundle.symbol });
+    logger.warn('Consensus aborted — insufficient node responses', { symbol: bundle.symbol });
     return {
       approved: false,
-      reason: 'Insufficient node responses (< 2)',
+      reason: 'Insufficient node responses or skipped due to flat market',
       compositeScore: 0,
       direction: 'NO_TRADE',
       nodeResults: { gemini: geminiResult, ollama: ollamaResult },

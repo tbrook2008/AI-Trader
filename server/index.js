@@ -99,6 +99,38 @@ app.post('/api/run-now', async (req, res) => {
   res.json({ ok: true, message: 'Cycle started — check /api/decisions for results' });
 });
 
+/** Fetch recent live logs */
+const fs = require('fs');
+app.get('/api/logs', (req, res) => {
+  try {
+    const logPath = path.join(__dirname, '../logs/combined.log');
+    if (!fs.existsSync(logPath)) return res.json({ logs: [] });
+    
+    const stats = fs.statSync(logPath);
+    const readSize = Math.min(stats.size, 10000); // Read last 10KB
+    const fd = fs.openSync(logPath, 'r');
+    const buffer = Buffer.alloc(readSize);
+    fs.readSync(fd, buffer, 0, readSize, stats.size - readSize);
+    fs.closeSync(fd);
+    
+    // Split by newline, remove empties, take last 30 lines
+    const lines = buffer.toString('utf-8').split('\n').filter(Boolean).slice(-30);
+    const parsed = lines.map(l => {
+      try {
+        const j = JSON.parse(l);
+        const time = new Date(j.timestamp).toLocaleTimeString('en-US', { hour12: false });
+        let msg = `[${time}] ${j.level}: ${j.message}`;
+        delete j.timestamp; delete j.level; delete j.message;
+        if (Object.keys(j).length) msg += ` ${JSON.stringify(j)}`;
+        return msg;
+      } catch(e) { return l; }
+    });
+    res.json({ logs: parsed });
+  } catch (err) {
+    res.json({ logs: ['Error reading logs: ' + err.message] });
+  }
+});
+
 /** Serve control panel for any unmatched route */
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/index.html'));
