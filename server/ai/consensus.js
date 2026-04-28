@@ -26,7 +26,7 @@ function normalizeOllama(sentiment) {
  */
 function redistributeWeights(scores) {
   const available = Object.entries(scores).filter(([, v]) => v !== null);
-  if (available.length < 1) return null; // Need at least 1 node (Gemini or Ollama)
+  if (available.length < 2) return null; // Need at least 2 nodes
 
   const totalWeight = available.reduce((sum, [k]) => sum + WEIGHTS[k], 0);
   const adjustedWeights = {};
@@ -92,10 +92,10 @@ async function runConsensus(bundle) {
 
   const info = redistributeWeights(rawScores);
   if (!info) {
-    logger.warn('Consensus aborted — no AI nodes responded', { symbol: bundle.symbol });
+    logger.warn('Consensus aborted — insufficient node responses', { symbol: bundle.symbol });
     return {
       approved: false,
-      reason: 'No AI nodes responded or market too flat to analyze',
+      reason: 'Insufficient node responses or skipped due to flat market',
       compositeScore: 0,
       direction: 'NO_TRADE',
       nodeResults: { gemini: geminiResult, ollama: ollamaResult },
