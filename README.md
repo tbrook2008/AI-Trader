@@ -14,8 +14,9 @@ An autonomous algorithmic trading system that runs 24/7, scans 8 crypto markets 
 **Signal pipeline per symbol:**
 1. **Data** — Yahoo Finance price/OHLCV + RSS news headlines aggregated into a research bundle
 2. **Gemini Node** — Technical analysis AI (EMA, RSI, trend, regime) → score −100 to +100
-3. **Ollama Node** — Local LLM news sentiment → score −100 to +100 (excluded gracefully if offline)
-4. **Consensus** — Weighted composite (Gemini 65%, Ollama 35%), approval threshold 60
+3. **Ollama Node** — Local LLM news sentiment → score −100 to +100 (excluded gracefully if offline). Calibrated via Few-Shot learning for extreme accuracy.
+4. **AI Debate (Refinement)** — If Gemini and Ollama scores diverge by >50 points, Ollama is forced to read Gemini's technical thesis and re-evaluate its stance.
+5. **Consensus** — Weighted composite (Gemini 65%, Ollama 35%), approval threshold 60
 5. **Validation** — 10-check pre-trade gate (kill switch, confidence, exposure, PDT, cooldown)
 6. **Execution** — Bracket order on Alpaca (entry + stop-loss + take-profit, atomic)
 7. **Logging** — HMAC-chained tamper-proof SQLite trade log

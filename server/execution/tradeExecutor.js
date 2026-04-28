@@ -117,17 +117,10 @@ async function execute({ bundle, consensus, decisionId }) {
       stopPrice:       parseFloat(stopPrice.toFixed(4)),
       takeProfitPrice: parseFloat(takeProfitPrice.toFixed(4)),
     });
-    logger.info('✅ Bracket order submitted', {
-      symbol,
-      orderId: order.orderId,
-      side,
-      qty:   sizing.qty,
-      stop:  stopPrice.toFixed(2),
-      target: takeProfitPrice.toFixed(2),
-    });
+    logger.info(`✅ Bracket order submitted to Alpaca: ${symbol} | OrderID: ${order.orderId} | Qty: ${sizing.qty} | Stop: ${stopPrice.toFixed(2)} | Target: ${takeProfitPrice.toFixed(2)}`);
   } catch (err) {
-    logger.error('Order submission failed', { symbol, error: err.message });
-    return { executed: false, reason: `Order failed: ${err.message}` };
+    logger.error('❌ Order submission failed at Alpaca execution layer', { symbol, error: err.message });
+    return { executed: false, reason: `Alpaca Error: ${err.message}` };
   }
 
   // Step 6: Log trade to SQLite

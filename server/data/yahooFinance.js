@@ -1,5 +1,6 @@
 require('dotenv').config();
-const yahooFinance = require('yahoo-finance2').default;
+const YahooFinance = require('yahoo-finance2').default;
+const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 const logger = require('../utils/logger');
 
 
@@ -118,8 +119,8 @@ async function getQuote(symbol, retries = 3) {
 async function getOHLCVWithIndicators(symbol, period1, interval = '1d') {
   try {
     // Yahoo finance2 historical only supports daily on free; use chart for intraday
-    const bars = await yahooFinance.historical(symbol, { period1, interval });
-
+    const chartData = await yahooFinance.chart(symbol, { period1, interval });
+    const bars = chartData.quotes;
     if (!bars || bars.length < 30) {
       logger.warn('Insufficient bars for indicators', { symbol, count: bars?.length });
       return null;

@@ -7,7 +7,9 @@ A fully autonomous, headless quantitative trading system designed for small acco
 
 ## System Core Logic
 1.  **Architecture**: Node.js (CommonJS) with a modular approach.
-2.  **Consensus Engine (`server/ai/consensus.js`)**: Uses a weighted model. Current primary nodes are Gemini (Technical) and Ollama (Sentiment). DeepSeek was removed to simplify for Phase 0.
+2.  **Consensus Engine (`server/ai/consensus.js`)**: Uses a weighted multi-node model. Current primary nodes are Gemini (Technical) and Ollama (Sentiment). 
+    *   **AI Debate (Refinement Loop)**: If Gemini and Ollama heavily disagree (e.g., >50 score divergence), a `refine()` pass is triggered where Ollama is forced to read Gemini's technical thesis and re-evaluate its stance.
+    *   **Few-Shot Calibration**: Ollama uses few-shot prompting to strictly adhere to precise sentiment scoring.
 3.  **Data Strategy**:
     *   Uses `yahoo-finance2` (pinned to v2.11.3 for CJS compatibility).
     *   Handles "Too Many Requests" (429) errors with exponential backoff in `server/data/yahooFinance.js`.

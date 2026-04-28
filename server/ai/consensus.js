@@ -61,7 +61,19 @@ async function runConsensus(bundle) {
   const geminiResult = await geminiNode.analyze(bundle);
 
   // Node 2: Ollama — news sentiment (excluded gracefully if offline)
-  const ollamaResult = await ollamaNode.analyze(bundle);
+  let ollamaResult = await ollamaNode.analyze(bundle);
+
+  // --- AI DEBATE REFINEMENT LOOP ---
+  if (geminiResult && ollamaResult) {
+    const geminiScore = geminiResult.score;
+    const ollamaScore = normalizeOllama(ollamaResult.sentiment);
+    
+    // If scores diverge by 50 or more points (e.g., Gemini +30, Ollama -20)
+    if (Math.abs(geminiScore - ollamaScore) >= 50) {
+      logger.info('Significant AI disagreement detected — triggering debate/refinement', { geminiScore, ollamaScore });
+      ollamaResult = await ollamaNode.refine(bundle, ollamaResult, geminiResult);
+    }
+  }
 
   const rawScores = {
     gemini: geminiResult?.score ?? null,
