@@ -10,7 +10,7 @@ A fully autonomous, headless quantitative trading system for small accounts ($50
 
 ---
 
-## Current Architecture (v3.0.0)
+## Current Architecture (v3.1.0)
 
 ### AI Pipeline — Ollama-First Design
 The consensus engine runs in this exact order per symbol:
@@ -122,6 +122,7 @@ TRADING_MODE=paper               # Always paper until profitable
 - Reuters RSS feed (`feeds.reuters.com`) is currently unreachable — this is a known external issue, not a code bug. Other RSS sources work fine.
 - `[yahooFinance.historical] Invalid options` warnings in PM2 error log are benign deprecation notices from the Yahoo library — not affecting data quality
 - ARIA (quant-trader) Ollama responses are extremely fast (~1-2s) because the model identity/persona is pre-baked, not injected per-request
+- **Cooldown Bug Fix**: Cooldown is now correctly tracked per-symbol (`last_trade_${symbol}`) instead of globally. Loop cycle timestamps are no longer used for cooldown calculation.
 
 ---
 

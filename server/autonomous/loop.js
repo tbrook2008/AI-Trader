@@ -201,7 +201,7 @@ async function runLoop() {
     if (!isLast) await sleep(SYMBOL_STAGGER_MS);
   }
 
-  setState('last_run', new Date().toISOString());
+
 
   const approved = cycleResults.filter(r => r.approved).length;
   const executed = cycleResults.filter(r => r.executed).length;

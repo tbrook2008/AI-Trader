@@ -1,7 +1,7 @@
 # AI Trader — Autonomous Quantitative Trading System
 
 > **Status**: Active — Paper trading on Alpaca. Crypto-first (8 pairs), stock switching supported.  
-> **Version**: v3.0.0 — April 2026  
+> **Version**: v3.1.0 — April 2026  
 > **Language**: Node.js 18+  
 > **Capital**: Designed for small accounts ($500+). No PDT restrictions on crypto.
 
@@ -244,7 +244,7 @@ curl -X POST http://localhost:3000/api/mode -H "Content-Type: application/json" 
 - **Emergency stop**: 7% unrealized loss triggers immediate close
 - **Daily loss limit**: 5% of account triggers kill switch for rest of day
 - **Consecutive losses**: 3 in a row triggers kill switch
-- **Cooldown**: 30 min minimum between trades on same symbol
+- **Cooldown**: 30 min minimum between trades on the SAME symbol (tracked individually)
 
 ---
 

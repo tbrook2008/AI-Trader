@@ -149,7 +149,7 @@ async function execute({ bundle, consensus, decisionId }) {
     compositeScore: consensus.compositeScore,
   });
 
-  setState('last_run', new Date().toISOString());
+  setState(`last_trade_${symbol}`, new Date().toISOString());
 
   return {
     executed:        true,
