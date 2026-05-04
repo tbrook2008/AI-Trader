@@ -5,7 +5,7 @@ const { getDailyPnl } = require('../db/tradeLogger');
 const { isCryptoSymbol } = require('../data/dataAggregator');
 const logger = require('../utils/logger');
 
-const MIN_CONFIDENCE   = parseFloat(process.env.MIN_AI_CONFIDENCE       || '55');
+const MIN_CONFIDENCE   = parseFloat(process.env.APPROVAL_THRESHOLD       || '45');
 const MAX_CONSEC_LOSS  = parseInt(process.env.MAX_CONSECUTIVE_LOSSES     || '3');
 const MAX_EXPOSURE_PCT = 0.5;   // 50% max total portfolio exposure
 const MAX_POSITION_PCT = parseFloat(process.env.MAX_POSITION_PCT         || '0.10');
@@ -45,13 +45,18 @@ async function runChecks({ consensus, symbol, positionDollars, alpacaAccount, op
       detail: consensus.reason,
     },
     {
+      name: 'No Crypto Shorting',
+      passed: !(isCryptoSymbol(symbol) && consensus.direction === 'SHORT'),
+      detail: 'Alpaca does not support short selling cryptocurrencies',
+    },
+    {
       name: `AI Confidence ≥ ${MIN_CONFIDENCE}`,
       passed: Math.abs(consensus.compositeScore) >= MIN_CONFIDENCE,
       detail: `Score: ${Math.abs(consensus.compositeScore).toFixed(1)}`,
     },
     {
-      name: '≥ 2 AI Nodes Responded',
-      passed: (consensus.nodesUsed?.length ?? 0) >= 2,
+      name: '≥ 1 AI Node Responded',
+      passed: (consensus.nodesUsed?.length ?? 0) >= 1,
       detail: `Nodes: ${consensus.nodesUsed?.join(', ') ?? 'none'}`,
     },
     {

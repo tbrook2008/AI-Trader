@@ -52,6 +52,7 @@ async function getOpenPositions() {
     avgEntry:    parseFloat(p.avg_entry_price),
     unrealizedPL: parseFloat(p.unrealized_pl),
     unrealizedPLPct: parseFloat(p.unrealized_plpc),
+    currentPrice: parseFloat(p.current_price),
   }));
 }
 
@@ -79,27 +80,32 @@ async function submitOrder({ symbol, qty, side, stopPrice, takeProfitPrice }) {
   const alpacaSymbol = normalizeSymbol(symbol);
   const isCrypto     = isCryptoSymbol(symbol);
 
-  // Step 2: Prepare order parameters with High Precision Precision
+  // Step 2: Prepare order parameters
   const orderParams = {
     symbol:        alpacaSymbol,
     side:          side.toLowerCase(),   // 'buy' or 'sell'
     type:          'market',
     time_in_force: isCrypto ? 'gtc' : 'day', // Crypto requires GTC
-    order_class:   'bracket',
   };
+
+  if (!isCrypto) {
+    orderParams.order_class = 'bracket';
+  }
 
   // Crypto uses fractional qty; stocks must be whole shares. Alpaca API is more reliable with string-based quantities.
   orderParams.qty = isCrypto ? qty.toString() : Math.floor(qty).toString();
 
-  // Bracket legs — these trigger after fill
-  if (stopPrice) {
-    orderParams.stop_loss = { stop_price: stopPrice.toFixed(2) };
-  }
-  if (takeProfitPrice) {
-    orderParams.take_profit = { limit_price: takeProfitPrice.toFixed(2) };
+  // Bracket legs — these trigger after fill (Only for stocks)
+  if (!isCrypto) {
+    if (stopPrice) {
+      orderParams.stop_loss = { stop_price: stopPrice.toFixed(2) };
+    }
+    if (takeProfitPrice) {
+      orderParams.take_profit = { limit_price: takeProfitPrice.toFixed(2) };
+    }
   }
 
-  logger.info(`Submitting bracket order to Alpaca: ${alpacaSymbol} | Qty: ${orderParams.qty} | Side: ${orderParams.side}`);
+  logger.info(`Submitting ${isCrypto ? 'market' : 'bracket'} order to Alpaca: ${alpacaSymbol} | Qty: ${orderParams.qty} | Side: ${orderParams.side}`);
 
   const order = await getClient().createOrder(orderParams);
 

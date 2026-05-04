@@ -1,6 +1,7 @@
 require('dotenv').config();
 const cron   = require('node-cron');
 const { runLoop } = require('./loop');
+const { monitorCryptoRisk } = require('./riskMonitor');
 const { initDb }  = require('../db/schema');
 const logger      = require('../utils/logger');
 
@@ -31,6 +32,15 @@ async function start() {
     } catch (err) {
       // Never let scheduler crash
       logger.error('Scheduler cycle error', { error: err.message, stack: err.stack });
+    }
+  });
+
+  // 1-Minute Crypto Risk Monitor
+  cron.schedule('* * * * *', async () => {
+    try {
+      await monitorCryptoRisk();
+    } catch (err) {
+      logger.error('Risk Monitor cycle error', { error: err.message });
     }
   });
 

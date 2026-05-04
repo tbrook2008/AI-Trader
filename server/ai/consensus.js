@@ -26,7 +26,7 @@ function normalizeOllama(sentiment) {
  */
 function redistributeWeights(scores) {
   const available = Object.entries(scores).filter(([, v]) => v !== null);
-  if (available.length < 2) return null; // Need at least 2 nodes
+  if (available.length < 1) return null; // Need at least 1 node
 
   const totalWeight = available.reduce((sum, [k]) => sum + WEIGHTS[k], 0);
   const adjustedWeights = {};

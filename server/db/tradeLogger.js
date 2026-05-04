@@ -107,10 +107,20 @@ function getRecentTrades(limit = 20) {
     .all(limit);
 }
 
+function getOpenTradeBySymbol(symbol) {
+  return getDb()
+    .prepare(`
+      SELECT * FROM trades 
+      WHERE symbol = ? AND status IN ('submitted', 'open') 
+      ORDER BY id DESC LIMIT 1
+    `)
+    .get(symbol);
+}
+
 function getDailyPnl() {
   const today = new Date().toISOString().slice(0, 10);
   const storedDate = getState('daily_pnl_date');
   return storedDate === today ? parseFloat(getState('daily_pnl') || '0') : 0;
 }
 
-module.exports = { logDecision, logTrade, updateTradeOutcome, getRecentDecisions, getRecentTrades, getDailyPnl };
+module.exports = { logDecision, logTrade, updateTradeOutcome, getRecentDecisions, getRecentTrades, getOpenTradeBySymbol, getDailyPnl };

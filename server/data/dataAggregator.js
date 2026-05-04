@@ -26,7 +26,11 @@ const FETCH_DELAY_MS = parseInt(process.env.SYMBOL_FETCH_DELAY_MS || '3000');
 const CRYPTO_BASES = ['BTC', 'ETH', 'SOL', 'ADA', 'DOGE', 'AVAX', 'DOT', 'LINK', 'LTC', 'XRP', 'MATIC'];
 
 function isCryptoSymbol(symbol) {
-  const base = symbol.split(/[-/]/)[0].toUpperCase();
+  // Handle 'DOGE/USD', 'DOGE-USD', 'DOGEUSD', 'DOGE'
+  let base = symbol.split(/[-/]/)[0].toUpperCase();
+  if (base.endsWith('USD') && base !== 'USD') {
+    base = base.replace('USD', '');
+  }
   return CRYPTO_BASES.includes(base);
 }
 
