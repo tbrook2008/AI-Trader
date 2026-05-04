@@ -1,54 +1,34 @@
 require('dotenv').config();
-const cron   = require('node-cron');
-const { runLoop } = require('./loop');
+const { startStream } = require('./loop');
 const { monitorCryptoRisk } = require('./riskMonitor');
 const { initDb }  = require('../db/schema');
 const logger      = require('../utils/logger');
 
-const SCHEDULE = process.env.CRON_SCHEDULE || '*/15 * * * *';
-
 async function start() {
-  logger.info('🚀 AI Trader Scheduler starting');
-  logger.info(`📅 Schedule: ${SCHEDULE}`);
+  logger.info('🚀 AI Trader Event-Driven Stream starting');
   logger.info(`💰 Mode: ${(process.env.TRADING_MODE || 'paper').toUpperCase()}`);
-  logger.info(`👁️  Watching: ${process.env.WATCHED_SYMBOLS || 'AAPL,SPY'}`);
+  logger.info(`👁️  Watching: ${process.env.WATCHED_SYMBOLS || 'BTC/USD,ETH/USD,AAPL'}`);
 
   // Initialize DB on startup
   initDb();
 
-  // Run once immediately on startup
-  logger.info('Running initial cycle...');
-  await runLoop().catch(err => logger.error('Initial cycle error', { error: err.message }));
+  // Start the Alpaca WebSocket stream
+  startStream();
 
-  // Schedule recurring cycles
-  if (!cron.validate(SCHEDULE)) {
-    logger.error('Invalid CRON_SCHEDULE — exiting', { schedule: SCHEDULE });
-    process.exit(1);
-  }
-
-  cron.schedule(SCHEDULE, async () => {
-    try {
-      await runLoop();
-    } catch (err) {
-      // Never let scheduler crash
-      logger.error('Scheduler cycle error', { error: err.message, stack: err.stack });
-    }
-  });
-
-  // 1-Minute Crypto Risk Monitor
-  cron.schedule('* * * * *', async () => {
+  // 1-Minute Crypto Risk Monitor via simple interval instead of cron
+  setInterval(async () => {
     try {
       await monitorCryptoRisk();
     } catch (err) {
       logger.error('Risk Monitor cycle error', { error: err.message });
     }
-  });
+  }, 60000);
 
-  logger.info('Scheduler running. Press Ctrl+C to stop.');
+  logger.info('Stream running. Press Ctrl+C to stop.');
 }
 
 // Graceful shutdown
-process.on('SIGINT',  () => { logger.info('Scheduler stopped (SIGINT)');  process.exit(0); });
-process.on('SIGTERM', () => { logger.info('Scheduler stopped (SIGTERM)'); process.exit(0); });
+process.on('SIGINT',  () => { logger.info('Stream stopped (SIGINT)');  process.exit(0); });
+process.on('SIGTERM', () => { logger.info('Stream stopped (SIGTERM)'); process.exit(0); });
 
 start();

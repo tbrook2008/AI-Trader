@@ -1,286 +1,116 @@
-/**
- * server/autonomous/loop.js
- * Main trading cycle — runs on cron schedule.
- *
- * Changes from original:
- * - Market hours guard (NYSE 9:30–16:00 ET, skip weekends; crypto runs 24/7)
- * - Per-symbol market hours: mixed watchlists work (BTC runs at 3am, SPY waits)
- * - Position exit loop (emergency stop + max hold days)
- * - Live balance fetched from Alpaca for kill-switch check
- * - Correlation guard: cap concurrent open positions to avoid correlated blow-up
- * - Staggered symbol fetching to avoid Yahoo Finance rate limits
- */
 require('dotenv').config();
 const { aggregate, isCryptoSymbol } = require('../data/dataAggregator');
 const { runConsensus } = require('../ai/consensus');
 const { execute }      = require('../execution/tradeExecutor');
-const alpaca           = require('../execution/alpacaClient');
+const alpacaClient     = require('../execution/alpacaClient');
 const { logDecision }  = require('../db/tradeLogger');
-const { getDailyPnl }  = require('../db/tradeLogger');
-const killSwitch        = require('../risk/killSwitch');
-const { setState }     = require('../db/schema');
+const killSwitch       = require('../risk/killSwitch');
 const logger           = require('../utils/logger');
+const { checkCorrelation } = require('../risk/correlation');
 
-const SYMBOLS              = (process.env.WATCHED_SYMBOLS || 'BTC/USD,ETH/USD,SOL/USD').split(',').map(s => s.trim());
-const MAX_HOLD_DAYS        = parseInt(process.env.MAX_HOLD_DAYS            || '3');  // Auto-exit after N days
-const MAX_CONCURRENT_POS   = parseInt(process.env.MAX_CONCURRENT_POSITIONS || '3');  // Max open positions at once
-const SYMBOL_STAGGER_MS    = parseInt(process.env.SYMBOL_FETCH_DELAY_MS    || '3000'); // Delay between fetches
+const SYMBOLS = (process.env.WATCHED_SYMBOLS || 'BTC/USD,ETH/USD,AAPL').split(',').map(s => s.trim());
 
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const tickBuffer = {};
 
-// ─────────────────────────────────────────────────────────────
-// Market Hours Guard
-// ─────────────────────────────────────────────────────────────
+function startStream() {
+  const client = alpacaClient.getClient();
+  const stockStream = client.data_stream_v2;
+  const cryptoStream = client.crypto_stream_v1beta3;
 
-/**
- * Returns true if NYSE equity market is currently open.
- * Pass symbol to auto-detect crypto (always open).
- */
-function isMarketOpen(symbol) {
-  // Crypto trades 24/7 — always open
-  if (isCryptoSymbol(symbol)) return true;
-
-  // Stocks: NYSE 9:30 AM – 4:00 PM ET, Mon–Fri only
-  const now = new Date();
-  const et  = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const day  = et.getDay();
-  const hour = et.getHours();
-  const min  = et.getMinutes();
-
-  if (day === 0 || day === 6) return false;  // Weekend
-  const totalMins = hour * 60 + min;
-  return totalMins >= 570 && totalMins < 960; // 9:30 AM → 4:00 PM
-}
-
-/**
- * Check if any symbol in the watchlist can be traded RIGHT NOW.
- * Crypto: always yes. Stocks: only during NYSE hours.
- */
-function hasAnyTradableSymbol() {
-  return SYMBOLS.some(s => isMarketOpen(s));
-}
-
-// ─────────────────────────────────────────────────────────────
-// Position Exit Logic
-// ─────────────────────────────────────────────────────────────
-
-/**
- * Check all open Alpaca positions and close any that:
- * 1. Are in significant loss beyond stop (safety net if bracket order failed)
- */
-async function checkAndExitPositions() {
-  let positions;
-  try {
-    positions = await alpaca.getOpenPositions();
-  } catch (err) {
-    logger.error('Failed to fetch positions for exit check', { error: err.message });
-    return [];
-  }
-
-  if (positions.length === 0) return [];
-
-  const EMERGENCY_STOP = parseFloat(process.env.EMERGENCY_STOP_PCT || '0.07');
-
-  for (const pos of positions) {
-    const lossExceeded = pos.unrealizedPLPct < -EMERGENCY_STOP;
-
-    if (lossExceeded) {
-      logger.warn('🚨 Emergency stop triggered — closing position', {
-        symbol:           pos.symbol,
-        unrealizedPL:     pos.unrealizedPL.toFixed(2),
-        unrealizedPLPct:  (pos.unrealizedPLPct * 100).toFixed(2) + '%',
-        emergencyStopPct: (EMERGENCY_STOP * 100).toFixed(0) + '%',
-      });
-      await alpaca.closePosition(pos.symbol);
-    } else {
-      logger.info('Position check — holding', {
-        symbol:          pos.symbol,
-        unrealizedPL:    pos.unrealizedPL.toFixed(2),
-        unrealizedPLPct: (pos.unrealizedPLPct * 100).toFixed(2) + '%',
-      });
-    }
-  }
-
-  // Return current open positions after exits
-  try {
-    return await alpaca.getOpenPositions();
-  } catch {
-    return [];
-  }
-}
-
-// ─────────────────────────────────────────────────────────────
-// Main Loop
-// ─────────────────────────────────────────────────────────────
-
-async function runLoop() {
-  logger.info('═══ Loop cycle starting ═══', { symbols: SYMBOLS, time: new Date().toISOString() });
-
-  // Check if anything at all is tradable right now
-  if (!hasAnyTradableSymbol()) {
-    const etTime = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
-    logger.info('All symbols outside trading hours — skipping analysis cycle', {
-      time: etTime + ' ET',
-      symbols: SYMBOLS,
-      note: 'Crypto symbols would not be skipped — check WATCHED_SYMBOLS in .env',
-    });
-    await checkAndExitPositions();
-    return { skipped: true, reason: 'All symbols outside trading hours' };
-  }
-
-  // Kill switch check
-  if (killSwitch.isActive()) {
-    logger.warn('Kill switch active — skipping cycle', { reason: killSwitch.getReason() });
-    return { skipped: true, reason: 'Kill switch active' };
-  }
-
-  // Fetch live balance for daily loss limit check
-  let liveBalance = null;
-  try {
-    const acct = await alpaca.getAccount();
-    liveBalance = acct.portfolioValue;
-    logger.info('Account status', { portfolioValue: liveBalance, buyingPower: acct.buyingPower });
-  } catch (err) {
-    logger.warn('Could not fetch account balance — using env fallback', { error: err.message });
-  }
-
-  // Auto-check daily loss limit against live balance
-  const balanceForCheck = liveBalance ?? parseFloat(process.env.PAPER_ACCOUNT_BALANCE || '100000');
-  killSwitch.autoCheckDailyLoss(getDailyPnl(), balanceForCheck);
-  if (killSwitch.isActive()) {
-    logger.warn('Daily loss limit triggered kill switch');
-    return { skipped: true, reason: 'Daily loss limit hit' };
-  }
-
-  // Check and exit losing positions first — returns updated open positions list
-  const currentPositions = await checkAndExitPositions();
-  const openPositionCount = currentPositions.length;
-
-  logger.info('Correlation check', {
-    openPositions: openPositionCount,
-    maxAllowed:    MAX_CONCURRENT_POS,
-    canOpenMore:   openPositionCount < MAX_CONCURRENT_POS,
+  stockStream.onConnect(() => {
+    logger.info('Connected to Alpaca Stock WebSocket');
+    const stocks = SYMBOLS.filter(s => !isCryptoSymbol(s));
+    if (stocks.length > 0) stockStream.subscribeForTrades(stocks);
   });
 
-  // Analyse each symbol — crypto runs anytime, stocks only during NYSE hours
-  const cycleResults = [];
-  let newTradesThisCycle = 0;
-
-  for (const symbol of SYMBOLS) {
-    if (!isMarketOpen(symbol)) {
-      logger.info(`Skipping ${symbol} — market closed`, {
-        symbol,
-        isCrypto: isCryptoSymbol(symbol),
-        hint: 'This is a stock symbol outside NYSE hours',
-      });
-      continue;
-    }
-
-    // ── Correlation Guard ───────────────────────────────────────────────────
-    // Stop opening new positions once we hit the concurrent cap.
-    // Existing positions still get their exit checks every cycle above.
-    const totalOpen = openPositionCount + newTradesThisCycle;
-    if (totalOpen >= MAX_CONCURRENT_POS) {
-      logger.info(`Correlation cap reached — skipping new analysis for ${symbol}`, {
-        symbol,
-        openPositions: totalOpen,
-        maxConcurrent: MAX_CONCURRENT_POS,
-        tip: 'Raise MAX_CONCURRENT_POSITIONS in .env to allow more simultaneous positions',
-      });
-      continue;
-    }
-
-    logger.info(`─── Processing ${symbol} ───`);
-    const result = await processSymbol(symbol);
-    cycleResults.push({ symbol, ...result });
-
-    if (result.executed) newTradesThisCycle++;
-
-    // Staggered delay — avoids Yahoo Finance 429s when scanning 8+ symbols
-    const isLast = SYMBOLS.indexOf(symbol) === SYMBOLS.length - 1;
-    if (!isLast) await sleep(SYMBOL_STAGGER_MS);
-  }
-
-
-
-  const approved = cycleResults.filter(r => r.approved).length;
-  const executed = cycleResults.filter(r => r.executed).length;
-  logger.info('═══ Loop cycle complete ═══', {
-    symbolsWatched: SYMBOLS.length,
-    symbolsScanned: cycleResults.length,
-    approved,
-    executed,
-    openPositionsNow: openPositionCount + executed,
+  stockStream.onStockTrade(trade => handleTick(trade.Symbol, trade.Price, trade.Size, new Date(trade.Timestamp)));
+  
+  cryptoStream.onConnect(() => {
+    logger.info('Connected to Alpaca Crypto WebSocket');
+    const cryptos = SYMBOLS.filter(s => isCryptoSymbol(s)).map(s => s.replace('/', ''));
+    if (cryptos.length > 0) cryptoStream.subscribeForTrades(cryptos);
   });
 
-  return { cycleResults, approved, executed };
+  cryptoStream.onCryptoTrade(trade => {
+    // Re-add slash for our internal representation
+    const symbol = SYMBOLS.find(s => s.replace('/', '') === trade.Symbol) || trade.Symbol;
+    handleTick(symbol, trade.Price, trade.Size, new Date(trade.Timestamp));
+  });
+
+  stockStream.connect();
+  cryptoStream.connect();
+  
+  // To handle minute bar closures deterministically, we can use an interval 
+  // that flushes the buffer at the top of every minute.
+  setInterval(flushBars, 60000);
 }
 
+async function handleTick(symbol, price, size, timestamp) {
+  if (!tickBuffer[symbol]) {
+    tickBuffer[symbol] = {
+      open: price, high: price, low: price, close: price, volume: size,
+      minute: timestamp.getMinutes()
+    };
+  } else {
+    const b = tickBuffer[symbol];
+    b.high = Math.max(b.high, price);
+    b.low = Math.min(b.low, price);
+    b.close = price;
+    b.volume += size;
+  }
+}
 
-// ─────────────────────────────────────────────────────────────
-// Per-Symbol Pipeline
-// ─────────────────────────────────────────────────────────────
+async function flushBars() {
+  const symbols = Object.keys(tickBuffer);
+  for (const symbol of symbols) {
+    const bar = tickBuffer[symbol];
+    delete tickBuffer[symbol];
+    
+    // Process the completed minute bar
+    logger.info(`Flushed 1-min bar for ${symbol}`, { close: bar.close, volume: bar.volume });
+    await processSymbol(symbol, bar);
+  }
+}
 
-async function processSymbol(symbol) {
+async function processSymbol(symbol, latestBar) {
   try {
+    if (killSwitch.isActive()) return;
+
     // 1. Aggregate market data + news
-    const bundle = await aggregate(symbol);
-    if (!bundle) {
-      logger.warn('Skipping symbol — no data', { symbol });
-      return { approved: false, executed: false, reason: 'No market data' };
-    }
+    const bundle = await aggregate(symbol, latestBar);
+    if (!bundle) return;
 
-    // 2. Run Tri-Node AI consensus (Gemini + Ollama; DeepSeek removed)
+    // 2. Run Regime Classification Consensus (Gemini + Ollama)
     const consensus = await runConsensus(bundle);
 
-    // 3. Log the AI decision (regardless of approval)
+    // 3. Correlation Check
+    const correlationPass = await checkCorrelation(symbol);
+    if (!correlationPass) {
+      logger.info('Trade rejected due to high correlation with open positions', { symbol });
+      return;
+    }
+
+    // 4. Log the AI decision
     const decisionId = logDecision({
       symbol,
-      geminiScore:     consensus.rawScores?.gemini,
       geminiThesis:    consensus.nodeResults?.gemini?.thesis,
       ollamaSentiment: consensus.nodeResults?.ollama?.sentiment,
-      deepseekScore:   null,   // DeepSeek removed
       compositeScore:  consensus.compositeScore,
       approved:        consensus.approved,
-      direction:       consensus.direction,
+      direction:       consensus.regime, // Now logs the regime
       reason:          consensus.reason,
       nodesUsed:       consensus.nodesUsed,
     });
 
-    // 4. Execute if approved
-    if (consensus.approved && consensus.direction !== 'NO_TRADE') {
-      const tradeResult = await execute({ bundle, consensus, decisionId });
-      return {
-        approved:       true,
-        executed:       tradeResult.executed,
-        decisionId,
-        compositeScore: consensus.compositeScore,
-        direction:      consensus.direction,
-        tradeResult,
-      };
+    // 5. Execute if approved
+    if (consensus.approved) {
+      // execute will now handle the quantitative execution trigger and ATR risk rails
+      await execute({ bundle, consensus, decisionId });
     }
 
-    logger.info('Trade not approved', {
-      symbol,
-      score:  consensus.compositeScore,
-      reason: consensus.reason,
-    });
-    return {
-      approved:       false,
-      executed:       false,
-      decisionId,
-      compositeScore: consensus.compositeScore,
-      reason:         consensus.reason,
-    };
-
   } catch (err) {
-    logger.error('Unhandled error in processSymbol', {
-      symbol,
-      error: err.message,
-      stack: err.stack,
-    });
-    return { approved: false, executed: false, reason: `Error: ${err.message}` };
+    logger.error('Unhandled error in processSymbol', { symbol, error: err.message });
   }
 }
 
-module.exports = { runLoop, processSymbol };
+module.exports = { startStream, processSymbol };

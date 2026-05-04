@@ -1,11 +1,6 @@
 /**
  * server/execution/tradeExecutor.js
- * Full trade execution pipeline:
- * 1. Fetch LIVE balance from Alpaca (not hardcoded env)
- * 2. Kelly position sizing
- * 3. 10-check risk validation
- * 4. Bracket order submission (entry + stop + target)
- * 5. SQLite logging
+ * Full trade execution pipeline
  */
 require('dotenv').config();
 const alpaca        = require('./alpacaClient');
@@ -16,9 +11,12 @@ const memory        = require('../db/strategyMemory');
 const { setState }  = require('../db/schema');
 const logger        = require('../utils/logger');
 
-const STOP_LOSS_PCT    = parseFloat(process.env.STOP_LOSS_PCT    || '0.02');  // 2% stop
-const TAKE_PROFIT_PCT  = parseFloat(process.env.TAKE_PROFIT_PCT  || '0.04');  // 4% target (2:1 R/R)
-const DRY_RUN          = process.env.DRY_RUN === 'true';
+const macd = require('../quantitative/macd');
+const bollingerRsi = require('../quantitative/bollingerRsi');
+const { calculateATR } = require('../quantitative/atr');
+
+const DRY_RUN = process.env.DRY_RUN === 'true';
+const ATR_MULTIPLIER = parseFloat(process.env.ATR_MULTIPLIER || '2.0');
 
 /**
  * Full trade execution pipeline.
@@ -29,13 +27,27 @@ async function execute({ bundle, consensus, decisionId }) {
   const price  = bundle.price;
   const mode   = process.env.TRADING_MODE || 'paper';
 
+  // Step 1: Quantitative Trigger
+  let direction = 'NO_TRADE';
+  if (consensus.regime === 'momentum') {
+    direction = macd.evaluate(bundle.history);
+  } else if (consensus.regime === 'mean-reverting') {
+    direction = bollingerRsi.evaluate(bundle.history);
+  }
+
+  if (direction === 'NO_TRADE') {
+    logger.info('Quantitative trigger condition not met — skipping execution', { symbol, regime: consensus.regime });
+    return { executed: false, reason: 'Quantitative trigger condition not met' };
+  }
+
   logger.info('Trade executor started', {
     symbol,
-    direction: consensus.direction,
+    direction,
+    regime: consensus.regime,
     score: consensus.compositeScore,
   });
 
-  // Step 1: Fetch live account data from Alpaca
+  // Step 2: Fetch live account data
   let account, openPositions;
   try {
     [account, openPositions] = await Promise.all([
@@ -47,27 +59,19 @@ async function execute({ bundle, consensus, decisionId }) {
     return { executed: false, reason: 'Alpaca account fetch failed' };
   }
 
-  // Use LIVE portfolio value for all sizing — never a hardcoded number
   const liveBalance = account.portfolioValue;
-  logger.info('Live account balance', { portfolioValue: liveBalance, buyingPower: account.buyingPower });
 
   if (account.tradingBlocked) {
     logger.warn('Account trading is blocked — skipping', { symbol });
     return { executed: false, reason: 'Alpaca account trading blocked' };
   }
 
-  // Step 2: Kelly position sizing using live balance
-  const sizing = kelly.getPositionSize(symbol, price, liveBalance);
-  logger.info('Position sizing', {
-    symbol,
-    positionDollars: sizing.positionDollars,
-    qty: sizing.qty,
-    fraction: (sizing.fraction * 100).toFixed(2) + '%',
-  });
-
-  // Step 3: Pre-trade validator (10 checks)
+  // Step 3: Kelly sizing
+  const sizing = kelly.getPositionSize(symbol, price, liveBalance, consensus.compositeScore);
+  
+  // Step 4: Validation
   const validation = await validator.runChecks({
-    consensus,
+    consensus: { ...consensus, direction }, // pass direction to validator
     symbol,
     positionDollars: sizing.positionDollars,
     alpacaAccount:   account,
@@ -77,75 +81,60 @@ async function execute({ bundle, consensus, decisionId }) {
 
   if (!validation.passed) {
     logger.warn('Trade blocked by validator', { symbol, failed: validation.failed });
-    return {
-      executed: false,
-      reason: `Validator: ${validation.failed.join(', ')}`,
-      checks: validation.checks,
-    };
+    return { executed: false, reason: `Validator: ${validation.failed.join(', ')}` };
   }
 
-  // Step 4: Compute bracket order prices
-  const side = consensus.direction === 'LONG' ? 'buy' : 'sell';
+  // Step 5: Dynamic ATR Risk Rails
+  const atrValue = calculateATR(bundle.history, 14);
+  if (!atrValue) {
+    logger.warn('Insufficient data to calculate ATR — skipping', { symbol });
+    return { executed: false, reason: 'Insufficient ATR data' };
+  }
 
-  const stopPrice = consensus.direction === 'LONG'
-    ? price * (1 - STOP_LOSS_PCT)
-    : price * (1 + STOP_LOSS_PCT);
+  const trailPrice = atrValue * ATR_MULTIPLIER;
+  const side = direction === 'LONG' ? 'buy' : 'sell';
 
-  // Use Gemini's target if available, otherwise default to fixed R/R
-  const geminiTarget = consensus.nodeResults?.gemini?.target;
-  const takeProfitPrice = geminiTarget ?? (
-    consensus.direction === 'LONG'
-      ? price * (1 + TAKE_PROFIT_PCT)
-      : price * (1 - TAKE_PROFIT_PCT)
-  );
-
-  // Step 5: Submit bracket order (skip in dry run)
   if (DRY_RUN) {
     logger.info('🔍 DRY RUN — no order submitted', {
-      symbol, side, qty: sizing.qty, stopPrice: stopPrice.toFixed(2),
-      takeProfitPrice: takeProfitPrice.toFixed(2),
+      symbol, side, qty: sizing.qty, trailPrice: trailPrice.toFixed(2),
     });
     return { executed: false, dryRun: true, sizing, validation, reason: 'Dry run mode' };
   }
 
+  // Step 6: Submit Order
   let order;
   try {
     order = await alpaca.submitOrder({
       symbol,
-      qty:             sizing.qty,
+      qty:        sizing.qty,
       side,
-      stopPrice:       parseFloat(stopPrice.toFixed(4)),
-      takeProfitPrice: parseFloat(takeProfitPrice.toFixed(4)),
+      trailPrice: parseFloat(trailPrice.toFixed(4)),
     });
-    logger.info(`✅ Bracket order submitted to Alpaca: ${symbol} | OrderID: ${order.orderId} | Qty: ${sizing.qty} | Stop: ${stopPrice.toFixed(2)} | Target: ${takeProfitPrice.toFixed(2)}`);
+    logger.info(`✅ OTO Trailing Stop order submitted: ${symbol} | OrderID: ${order.orderId} | Qty: ${sizing.qty} | Trail: $${trailPrice.toFixed(2)}`);
   } catch (err) {
-    logger.error('❌ Order submission failed at Alpaca execution layer', { symbol, error: err.message });
+    logger.error('❌ Order submission failed', { symbol, error: err.message });
     return { executed: false, reason: `Alpaca Error: ${err.message}` };
   }
 
-  // Step 6: Log trade to SQLite
+  // Step 7: Log trade
   const tradeId = logTrade({
     symbol,
-    direction:      consensus.direction,
+    direction,
     qty:            sizing.qty,
     entryPrice:     price,
-    stopLoss:       parseFloat(stopPrice.toFixed(4)),
-    targetPrice:    parseFloat(takeProfitPrice.toFixed(4)),
+    stopLoss:       null, // Managed by Alpaca trail
+    targetPrice:    null,
     alpacaOrderId:  order.orderId,
     decisionId,
     mode,
   });
 
-  // Step 7: Save indicator state to strategy memory
+  // Step 8: Strategy memory
   memory.saveSetup({
     tradeId,
     symbol,
-    ema9:           bundle.ema9,
-    ema21:          bundle.ema21,
-    rsi14:          bundle.rsi14,
-    trend:          bundle.trend,
-    regime:         bundle.regime,
-    direction:      consensus.direction,
+    regime:         consensus.regime,
+    direction,
     compositeScore: consensus.compositeScore,
   });
 
@@ -156,14 +145,11 @@ async function execute({ bundle, consensus, decisionId }) {
     tradeId,
     orderId:         order.orderId,
     symbol,
-    direction:       consensus.direction,
+    direction,
     qty:             sizing.qty,
     entryPrice:      price,
-    stopLoss:        parseFloat(stopPrice.toFixed(2)),
-    takeProfitPrice: parseFloat(takeProfitPrice.toFixed(2)),
+    trailPrice:      parseFloat(trailPrice.toFixed(2)),
     positionDollars: sizing.positionDollars,
-    liveBalance,
-    checks:          validation.checks,
   };
 }
 

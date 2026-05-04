@@ -76,11 +76,10 @@ async function closePosition(symbol) {
  * Submit a bracket order (entry + stop-loss + take-profit in one atomic order).
  * Alpaca paper trading fully supports bracket orders.
  */
-async function submitOrder({ symbol, qty, side, stopPrice, takeProfitPrice }) {
+async function submitOrder({ symbol, qty, side, stopPrice, takeProfitPrice, trailPrice }) {
   const alpacaSymbol = normalizeSymbol(symbol);
   const isCrypto     = isCryptoSymbol(symbol);
 
-  // Step 2: Prepare order parameters
   const orderParams = {
     symbol:        alpacaSymbol,
     side:          side.toLowerCase(),   // 'buy' or 'sell'
@@ -88,24 +87,25 @@ async function submitOrder({ symbol, qty, side, stopPrice, takeProfitPrice }) {
     time_in_force: isCrypto ? 'gtc' : 'day', // Crypto requires GTC
   };
 
-  if (!isCrypto) {
-    orderParams.order_class = 'bracket';
-  }
-
-  // Crypto uses fractional qty; stocks must be whole shares. Alpaca API is more reliable with string-based quantities.
   orderParams.qty = isCrypto ? qty.toString() : Math.floor(qty).toString();
 
-  // Bracket legs — these trigger after fill (Only for stocks)
+  // If a trailPrice is provided, use an OTO trailing stop, else use standard bracket
   if (!isCrypto) {
-    if (stopPrice) {
-      orderParams.stop_loss = { stop_price: stopPrice.toFixed(2) };
-    }
-    if (takeProfitPrice) {
-      orderParams.take_profit = { limit_price: takeProfitPrice.toFixed(2) };
+    if (trailPrice) {
+      orderParams.order_class = 'oto';
+      orderParams.stop_loss = { trail_price: trailPrice.toFixed(2) };
+    } else {
+      orderParams.order_class = 'bracket';
+      if (stopPrice) {
+        orderParams.stop_loss = { stop_price: stopPrice.toFixed(2) };
+      }
+      if (takeProfitPrice) {
+        orderParams.take_profit = { limit_price: takeProfitPrice.toFixed(2) };
+      }
     }
   }
 
-  logger.info(`Submitting ${isCrypto ? 'market' : 'bracket'} order to Alpaca: ${alpacaSymbol} | Qty: ${orderParams.qty} | Side: ${orderParams.side}`);
+  logger.info(`Submitting ${orderParams.order_class || 'market'} order to Alpaca: ${alpacaSymbol} | Qty: ${orderParams.qty} | Side: ${orderParams.side}`);
 
   const order = await getClient().createOrder(orderParams);
 

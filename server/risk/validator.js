@@ -3,6 +3,7 @@ const killSwitch = require('./killSwitch');
 const { getState } = require('../db/schema');
 const { getDailyPnl } = require('../db/tradeLogger');
 const { isCryptoSymbol } = require('../data/dataAggregator');
+const { checkCorrelation } = require('./correlation');
 const logger = require('../utils/logger');
 
 const MIN_CONFIDENCE   = parseFloat(process.env.APPROVAL_THRESHOLD       || '45');
@@ -13,7 +14,7 @@ const COOLDOWN_MIN     = parseInt(process.env.COOLDOWN_MINUTES            || '30
 const MAX_DAILY_LOSS   = parseFloat(process.env.MAX_DAILY_LOSS_PCT        || '0.05');
 
 /**
- * Run all 10 pre-trade safety checks.
+ * Run all 11 pre-trade safety checks.
  * Returns { passed: boolean, failed: string[], checks: object[] }
  */
 async function runChecks({ consensus, symbol, positionDollars, alpacaAccount, openPositions, liveBalance = null }) {
@@ -32,6 +33,9 @@ async function runChecks({ consensus, symbol, positionDollars, alpacaAccount, op
   const openExposure = openPositions
     ? openPositions.reduce((sum, p) => sum + Math.abs(parseFloat(p.market_value || 0)), 0)
     : 0;
+
+  // Compute Correlation
+  const correlationPass = await checkCorrelation(symbol);
 
   const checks = [
     {
@@ -92,6 +96,11 @@ async function runChecks({ consensus, symbol, positionDollars, alpacaAccount, op
         return normalize(p.symbol) === normalize(symbol);
       }),
       detail: `Checking ${symbol} in ${openPositions?.length ?? 0} open positions`,
+    },
+    {
+      name: 'Correlation Guard',
+      passed: correlationPass,
+      detail: correlationPass ? 'No high correlation with open positions' : 'Rejected due to high correlation with an open position',
     },
   ];
 

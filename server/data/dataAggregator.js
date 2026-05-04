@@ -1,32 +1,13 @@
-const { getQuote, getOHLCVWithIndicators, getSymbolNews } = require('./yahooFinance');
 const { scrapeForSymbol } = require('./newsScraper');
+const alpacaClient = require('../execution/alpacaClient');
 const logger = require('../utils/logger');
 
-// Period for historical bars: ~3 months back
-function getPeriod1() {
-  const d = new Date();
-  d.setMonth(d.getMonth() - 3);
-  return d.toISOString().slice(0, 10);
-}
-
-/**
- * Staggered sleep to avoid Yahoo Finance rate limits when scanning many symbols.
- * Configurable via SYMBOL_FETCH_DELAY_MS env (default 3000ms between symbols).
- */
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-const FETCH_DELAY_MS = parseInt(process.env.SYMBOL_FETCH_DELAY_MS || '3000');
-
-// ─────────────────────────────────────────────────────────────
-// Symbol normalization helpers
-// Internal format: BTC/USD (Alpaca crypto format)
-// Yahoo Finance format: BTC-USD
-// Stock symbols: unchanged (SPY, AAPL, etc.)
-// ─────────────────────────────────────────────────────────────
+// Local buffer of historical bars to compute indicators
+const barsHistory = {};
 
 const CRYPTO_BASES = ['BTC', 'ETH', 'SOL', 'ADA', 'DOGE', 'AVAX', 'DOT', 'LINK', 'LTC', 'XRP', 'MATIC'];
 
 function isCryptoSymbol(symbol) {
-  // Handle 'DOGE/USD', 'DOGE-USD', 'DOGEUSD', 'DOGE'
   let base = symbol.split(/[-/]/)[0].toUpperCase();
   if (base.endsWith('USD') && base !== 'USD') {
     base = base.replace('USD', '');
@@ -34,118 +15,111 @@ function isCryptoSymbol(symbol) {
   return CRYPTO_BASES.includes(base);
 }
 
-/**
- * Convert internal symbol to Yahoo Finance format.
- * BTC/USD → BTC-USD, ETH/USD → ETH-USD, SPY → SPY
- */
-function toYahooSymbol(symbol) {
-  if (isCryptoSymbol(symbol)) {
-    // Yahoo Finance uses BTC-USD format
-    const base = symbol.split(/[-/]/)[0].toUpperCase();
-    return `${base}-USD`;
-  }
-  return symbol.toUpperCase();
-}
-
-/**
- * Get a short human-readable name for news searches.
- * BTC/USD → Bitcoin, ETH/USD → Ethereum, SPY → SPY
- */
 function getSearchTerm(symbol) {
   const base = symbol.split(/[-/]/)[0].toUpperCase();
   const names = {
-    BTC: 'Bitcoin',
-    ETH: 'Ethereum',
-    SOL: 'Solana',
-    ADA: 'Cardano',
-    DOGE: 'Dogecoin',
-    AVAX: 'Avalanche',
-    DOT: 'Polkadot',
-    LINK: 'Chainlink',
-    LTC: 'Litecoin',
-    XRP: 'XRP',
-    MATIC: 'Polygon',
+    BTC: 'Bitcoin', ETH: 'Ethereum', SOL: 'Solana', ADA: 'Cardano',
+    DOGE: 'Dogecoin', AVAX: 'Avalanche', DOT: 'Polkadot', LINK: 'Chainlink',
+    LTC: 'Litecoin', XRP: 'XRP', MATIC: 'Polygon',
   };
   return names[base] || symbol;
 }
 
 /**
- * Aggregate all data for a symbol into a single research bundle.
- * Returns null if critical data is unavailable.
- *
- * Supports both:
- *   - Crypto: BTC/USD, ETH/USD, SOL/USD (translates to Yahoo BTC-USD format)
- *   - Stocks: SPY, AAPL, TSLA (passed through unchanged)
+ * Prime the historical bars using Alpaca REST API
  */
-async function aggregate(symbol) {
-  logger.info('Aggregating data', { symbol });
+async function primeHistory(symbol) {
+  if (barsHistory[symbol]) return; // Already primed
 
-  const yahooSymbol  = toYahooSymbol(symbol);
-  const searchTerm   = getSearchTerm(symbol);
-  const issCrypto    = isCryptoSymbol(symbol);
+  logger.info(`Priming historical bars for ${symbol}...`);
+  const client = alpacaClient.getClient();
+  const isCrypto = isCryptoSymbol(symbol);
+  
+  // Get bars for the last 2 days to ensure we have enough data
+  const start = new Date();
+  start.setDate(start.getDate() - 2);
+  
+  try {
+    let bars = [];
+    if (isCrypto) {
+      const resp = client.getCryptoBars(symbol, {
+        timeframe: '1Min',
+        start: start.toISOString(),
+        limit: 100
+      });
+      for await (let b of resp) bars.push(b);
+    } else {
+      const resp = client.getBarsV2(symbol, {
+        timeframe: '1Min',
+        start: start.toISOString(),
+        limit: 100
+      });
+      for await (let b of resp) bars.push(b);
+    }
+    
+    // Convert Alpaca bars to standard format
+    barsHistory[symbol] = bars.map(b => ({
+      open: b.OpenPrice || b.o,
+      high: b.HighPrice || b.h,
+      low: b.LowPrice || b.l,
+      close: b.ClosePrice || b.c,
+      volume: b.Volume || b.v
+    }));
+    logger.info(`Primed ${barsHistory[symbol].length} historical bars for ${symbol}`);
+  } catch (err) {
+    logger.error(`Failed to prime history for ${symbol}`, { error: err.message });
+    barsHistory[symbol] = [];
+  }
+}
 
-  logger.info('Symbol resolved', { internal: symbol, yahoo: yahooSymbol, isCrypto: issCrypto });
+/**
+ * Aggregate data and append the incoming live bar.
+ */
+async function aggregate(symbol, latestBar) {
+  logger.info('Aggregating data from live bar', { symbol });
 
-  const [quoteResult, indicatorsResult, yahooNews, rssNews] = await Promise.allSettled([
-    getQuote(yahooSymbol),
-    getOHLCVWithIndicators(yahooSymbol, getPeriod1(), '1d'),
-    getSymbolNews(yahooSymbol),
-    scrapeForSymbol(searchTerm, 6),   // Use human-readable term for RSS scraping
-  ]);
+  const searchTerm = getSearchTerm(symbol);
+  const issCrypto  = isCryptoSymbol(symbol);
 
-  if (quoteResult.status === 'rejected') {
-    logger.error('Failed to get quote — skipping symbol', {
-      symbol,
-      yahooSymbol,
-      error: quoteResult.reason?.message,
-    });
-    return null;
+  // Prime history if needed
+  if (!barsHistory[symbol]) {
+    await primeHistory(symbol);
   }
 
-  const quote      = quoteResult.value;
-  const indicators = indicatorsResult.status === 'fulfilled' ? indicatorsResult.value : null;
-  const yhNews     = yahooNews.status === 'fulfilled' ? yahooNews.value : [];
-  const rss        = rssNews.status === 'fulfilled' ? rssNews.value : [];
+  // Append new live bar
+  barsHistory[symbol].push(latestBar);
+  
+  // Keep only the last 100 bars to prevent memory leaks
+  if (barsHistory[symbol].length > 100) {
+    barsHistory[symbol].shift();
+  }
 
-  // Merge and deduplicate headlines
-  const allHeadlines = [
-    ...yhNews.map(n => ({ title: n.title, source: 'Yahoo Finance' })),
-    ...rss.map(n => ({ title: n.title, source: n.source })),
-  ].slice(0, 12);
+  const [rssNews] = await Promise.allSettled([
+    scrapeForSymbol(searchTerm, 6),
+  ]);
+
+  const rss = rssNews.status === 'fulfilled' ? rssNews.value : [];
+  const allHeadlines = rss.map(n => ({ title: n.title, source: n.source })).slice(0, 12);
 
   const bundle = {
-    symbol,              // Always use internal symbol (BTC/USD, SPY) as the canonical identifier
-    yahooSymbol,         // Yahoo-format (BTC-USD, SPY) — used by Alpaca order normalizer
+    symbol,
     isCrypto: issCrypto,
     timestamp: new Date().toISOString(),
-    // Price data
-    price:     quote.price,
-    changePct: quote.changePct,
-    volume:    quote.volume,
-    high:      quote.high,
-    low:       quote.low,
-    // Indicators (from historical analysis)
-    ema9:        indicators?.ema9 ?? null,
-    ema21:       indicators?.ema21 ?? null,
-    rsi14:       indicators?.rsi14 ?? null,
-    trend:       indicators?.trend ?? 'neutral',
-    regime:      indicators?.regime ?? 'ranging',
-    volumeTrend: indicators?.volumeTrend ?? 'stable',
+    // Latest bar price data
+    price:     latestBar.close,
+    high:      latestBar.high,
+    low:       latestBar.low,
+    volume:    latestBar.volume,
+    
+    // Pass the full historical array to be used by the deterministic quantitative scripts
+    history:   barsHistory[symbol],
+    
     // News
     headlines:    allHeadlines,
     headlineText: allHeadlines.map(h => h.title).join(' | '),
   };
 
-  logger.info('Bundle ready', {
-    symbol,
-    isCrypto: issCrypto,
-    price:    bundle.price,
-    trend:    bundle.trend,
-    rsi:      bundle.rsi14,
-    headlines: allHeadlines.length,
-  });
-
   return bundle;
 }
 
-module.exports = { aggregate, isCryptoSymbol, toYahooSymbol };
+module.exports = { aggregate, isCryptoSymbol, getSearchTerm, barsHistory };
