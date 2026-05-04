@@ -42,29 +42,40 @@ async function primeHistory(symbol) {
   try {
     let bars = [];
     if (isCrypto) {
-      const resp = client.getCryptoBars(symbol, {
+      // Crypto: getCryptoBars returns Promise<Map<symbol, Bar[]>>
+      // Crypto bars use PascalCase without 'Price' suffix: Close, High, Low, Open, Volume
+      const resp = await client.getCryptoBars([symbol], {
         timeframe: '1Min',
         start: start.toISOString(),
         limit: 100
       });
-      for await (let b of resp) bars.push(b);
+      bars = resp.get(symbol) || [];
+      barsHistory[symbol] = bars.map(b => ({
+        open:   b.Open,
+        high:   b.High,
+        low:    b.Low,
+        close:  b.Close,
+        volume: b.Volume
+      }));
     } else {
-      const resp = client.getBarsV2(symbol, {
+      // Stocks: getBarsV2 is an async iterable, NOT a Promise
+      // Stock bars use PascalCase with 'Price' suffix: ClosePrice, HighPrice etc.
+      const iter = client.getBarsV2(symbol, {
         timeframe: '1Min',
         start: start.toISOString(),
         limit: 100
       });
-      for await (let b of resp) bars.push(b);
+      for await (const b of iter) {
+        bars.push({
+          open:   b.OpenPrice,
+          high:   b.HighPrice,
+          low:    b.LowPrice,
+          close:  b.ClosePrice,
+          volume: b.Volume
+        });
+      }
+      barsHistory[symbol] = bars;
     }
-    
-    // Convert Alpaca bars to standard format
-    barsHistory[symbol] = bars.map(b => ({
-      open: b.OpenPrice || b.o,
-      high: b.HighPrice || b.h,
-      low: b.LowPrice || b.l,
-      close: b.ClosePrice || b.c,
-      volume: b.Volume || b.v
-    }));
     logger.info(`Primed ${barsHistory[symbol].length} historical bars for ${symbol}`);
   } catch (err) {
     logger.error(`Failed to prime history for ${symbol}`, { error: err.message });
@@ -79,7 +90,7 @@ async function aggregate(symbol, latestBar) {
   logger.info('Aggregating data from live bar', { symbol });
 
   const searchTerm = getSearchTerm(symbol);
-  const issCrypto  = isCryptoSymbol(symbol);
+  const isCrypto_  = isCryptoSymbol(symbol);
 
   // Prime history if needed
   if (!barsHistory[symbol]) {
@@ -103,7 +114,7 @@ async function aggregate(symbol, latestBar) {
 
   const bundle = {
     symbol,
-    isCrypto: issCrypto,
+    isCrypto: isCrypto_,
     timestamp: new Date().toISOString(),
     // Latest bar price data
     price:     latestBar.close,

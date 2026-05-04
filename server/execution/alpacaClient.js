@@ -60,7 +60,8 @@ async function getOpenPositions() {
  * Close a specific open position (market order).
  */
 async function closePosition(symbol) {
-  const alpacaSymbol = normalizeSymbol(symbol);
+  // Alpaca expects 'BTCUSD' for closing positions, not 'BTC/USD'
+  const alpacaSymbol = symbol.replace(/[-/]/g, '').toUpperCase();
   logger.info('Closing position', { symbol: alpacaSymbol });
   try {
     await getClient().closePosition(alpacaSymbol);

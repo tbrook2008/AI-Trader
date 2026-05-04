@@ -20,22 +20,27 @@ function startStream() {
   stockStream.onConnect(() => {
     logger.info('Connected to Alpaca Stock WebSocket');
     const stocks = SYMBOLS.filter(s => !isCryptoSymbol(s));
-    if (stocks.length > 0) stockStream.subscribeForTrades(stocks);
+    if (stocks.length > 0) stockStream.subscribeForQuotes(stocks);
   });
 
-  stockStream.onStockTrade(trade => handleTick(trade.Symbol, trade.Price, trade.Size, new Date(trade.Timestamp)));
+  stockStream.onStockQuote(quote => {
+    const midPrice = (quote.BidPrice + quote.AskPrice) / 2;
+    handleTick(quote.Symbol || quote.S, midPrice, quote.BidSize + quote.AskSize, new Date(quote.Timestamp));
+  });
   
   cryptoStream.onConnect(() => {
     logger.info('Connected to Alpaca Crypto WebSocket');
-    const cryptos = SYMBOLS.filter(s => isCryptoSymbol(s)).map(s => s.replace('/', ''));
-    if (cryptos.length > 0) cryptoStream.subscribeForTrades(cryptos);
+    const cryptos = SYMBOLS.filter(s => isCryptoSymbol(s));
+    if (cryptos.length > 0) cryptoStream.subscribeForQuotes(cryptos);
   });
 
-  cryptoStream.onCryptoTrade(trade => {
-    // Re-add slash for our internal representation
-    const symbol = SYMBOLS.find(s => s.replace('/', '') === trade.Symbol) || trade.Symbol;
-    handleTick(symbol, trade.Price, trade.Size, new Date(trade.Timestamp));
+  cryptoStream.onCryptoQuote(quote => {
+    const midPrice = (quote.BidPrice + quote.AskPrice) / 2;
+    handleTick(quote.S, midPrice, quote.BidSize + quote.AskSize, new Date(quote.Timestamp));
   });
+
+  cryptoStream.onError(err => logger.error('Alpaca Crypto WS Error', { error: err.message || err }));
+  stockStream.onError(err => logger.error('Alpaca Stock WS Error', { error: err.message || err }));
 
   stockStream.connect();
   cryptoStream.connect();

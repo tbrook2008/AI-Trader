@@ -1,46 +1,57 @@
 # AI Trader — Context for Future AI Agents
 
-This document provides essential context for any AI agent continuing development or maintenance of this system. Read this before making any changes.
+This document provides essential context for any AI agent continuing development or maintenance of this system. Read this **before** making any changes.
 
 ---
 
 ## Project Vision
 
-A fully autonomous, headless quantitative trading system for small accounts ($500+). It bridges high-level AI analysis with low-level bracket order execution on Alpaca, with a hard constraint of minimizing paid API usage by relying on a local LLM as the primary intelligence layer.
+A fully autonomous, headless quantitative trading system for small accounts ($500+). It uses a two-layer decision model: an AI layer (Ollama + Gemini) that classifies the market regime, and a deterministic quantitative layer (MACD / Bollinger+RSI) that decides the exact trade direction. Execution is via Alpaca (paper or live), with a custom software risk monitor replacing native bracket orders for crypto.
 
 ---
 
-## Current Architecture (v3.1.0)
+## Current Architecture (v4.0.0 — Event-Driven)
 
-### AI Pipeline — Ollama-First Design
-The consensus engine runs in this exact order per symbol:
+### Data Flow
+```
+Alpaca WebSocket Quotes (crypto + stocks)
+    → handleTick() → 1-minute bar buffer
+    → flushBars() every 60s
+    → processSymbol()
+        → dataAggregator.aggregate()   (primes history + scrapes news)
+        → consensus.runConsensus()     (Gemini + Ollama regime classification)
+        → correlation.checkCorrelation() (Pearson guard)
+        → tradeLogger.logDecision()
+        → tradeExecutor.execute()
+            → macd.evaluate() | bollingerRsi.evaluate()
+            → kellyCriterion.getPositionSize()
+            → validator.runChecks()
+            → calculateATR() for stop/trail
+            → alpacaClient.submitOrder()
+            → tradeLogger.logTrade()   (with ATR-derived stop/target)
+```
 
-1. **ARIA (Ollama / `quant-trader`)** — always runs first. Free, local, fast. Reads news headlines and returns a sentiment score (-1.0 to 1.0).
-2. **Cost-Saving Gate** — if `abs(ollamaScore) < 25` AND `trend == 'neutral'`, **skip Gemini entirely** and log "flat market". This is the key cost-control mechanism.
-3. **Gemini Node** — only called when ARIA detects real signal OR technicals show a trend. Performs technical analysis (EMA, RSI, regime) and returns score (-100 to 100).
-4. **AI Debate Loop** — if Gemini and ARIA scores diverge by ≥50 points, `ollamaNode.refine()` is called, forcing ARIA to re-evaluate its sentiment against Gemini's technical thesis.
-5. **Weighted Composite** — final score computed from available nodes. Approval threshold: 45.
+### AI Pipeline (Regime Classification)
+1. **ARIA (Ollama / `quant-trader`)** — always runs first. Local, free, fast. Reads news headlines, returns `{regime, confidence, summary}`.
+2. **Gemini Node** — always runs (institutional system requires it). Returns `{regime, confidence, thesis, keyRisk}`.
+3. **AI Debate** — if regimes conflict AND max confidence > 70, Ollama's `refine()` is called to re-evaluate against Gemini's thesis.
+4. **Weighted Composite** — Gemini 65% / Ollama 35%. Approval threshold: 55 (configurable via `APPROVAL_THRESHOLD`).
+
+### Quantitative Execution Triggers (Deterministic)
+- **Momentum regime** → `macd.evaluate()` — bullish MACD crossover = LONG, bearish = SHORT
+- **Mean-reverting regime** → `bollingerRsi.evaluate(history, isCrypto)` — price below lower Bollinger Band + RSI < 30 = LONG, above upper + RSI > 70 = SHORT (SHORT is blocked for crypto)
+- Both functions return `'LONG' | 'SHORT' | 'NO_TRADE'`. If `NO_TRADE`, execution is skipped.
+
+### Risk Management
+- **Stocks**: Alpaca OTO trailing stop order (native)
+- **Crypto**: `riskMonitor.js` runs every 60 seconds via `setInterval`, checks live Alpaca positions against ATR-derived stop/target levels stored in DB. Executes market close if breached.
+- **ATR Multiplier**: Default 2.0x ATR for stop, 4.0x ATR for target (stored in DB at trade time).
 
 ### The ARIA Model (`quant-trader`)
-ARIA is a **custom Ollama model** — not a modified version of llama3.1, but a separate named model built on top of it. It is defined in `Modelfile` at the project root.
-
-**Critical details:**
-- Model name: `quant-trader`
-- Rebuild command: `ollama create quant-trader -f Modelfile`
-- Temperature: 0.1 (baked in — do not increase, it makes outputs inconsistent)
-- Contains 10 calibrated financial few-shot examples permanently in system prompt
-- Hard-coded rules: regulatory events ≤−0.7, no hedge-phrasing, JSON-only output
-- `llama3.1` still exists untouched as the user's general-purpose model
-
-**Never change `OLLAMA_MODEL` in `.env` to `llama3.1`** — the generic model lacks the calibration and will produce inconsistent sentiment scores.
-
-### Consensus Engine (`server/ai/consensus.js`)
-- Weights: `WEIGHT_GEMINI=0.40`, `WEIGHT_OLLAMA=0.25` (note: weights get renormalized if a node is skipped/fails)
-- The `redistributeWeights()` function handles dynamic renormalization when nodes are absent
-- `resolveDirection()` uses simple vote majority between available nodes
-- When Gemini is skipped (flat market), only Ollama is available → `redistributeWeights` returns `null` (< 2 nodes) → trade is automatically rejected. This is correct behavior.
-
-**IMPORTANT**: The 2-node minimum in `redistributeWeights` means a flat-market skip = automatic NO_TRADE. This is intentional — if Ollama alone detects something, it still needs Gemini confirmation. The system is designed to be conservative.
+Custom Ollama model built on Llama 3.1 8B (Q4_K_M). Defined in `Modelfile` at project root.
+- **Rebuild command**: `ollama create quant-trader -f Modelfile`
+- **Temperature**: 0.1 (baked in — do not change)
+- **Never change** `OLLAMA_MODEL=quant-trader` to `llama3.1` — generic model lacks calibration
 
 ---
 
@@ -48,84 +59,126 @@ ARIA is a **custom Ollama model** — not a modified version of llama3.1, but a 
 
 | File | Purpose |
 |------|---------|
-| `Modelfile` | ARIA model definition — edit to change persona/examples |
-| `server/ai/consensus.js` | Main pipeline orchestrator — Ollama-first gating logic lives here |
-| `server/ai/ollamaNode.js` | ARIA API client — `analyze()` and `refine()` functions |
-| `server/ai/geminiNode.js` | Gemini technical analysis — gated, not always called |
-| `server/autonomous/loop.js` | Main trading cycle — processes symbols one at a time |
-| `server/data/dataAggregator.js` | Symbol normalization (BTC/USD ↔ BTC-USD), data bundling |
-| `server/risk/validator.js` | 10-check pre-trade safety gate |
-| `server/execution/tradeExecutor.js` | Kelly sizing → bracket order submission |
+| `Modelfile` | ARIA model definition |
+| `server/autonomous/scheduler.js` | Entry point — starts WebSocket stream + 60s risk monitor |
+| `server/autonomous/loop.js` | WebSocket handler — builds 1-min bars from quote stream, calls processSymbol |
+| `server/autonomous/riskMonitor.js` | Crypto stop-loss/take-profit monitor (runs every 60s) |
+| `server/ai/consensus.js` | Regime classification pipeline — Gemini + Ollama |
+| `server/ai/ollamaNode.js` | ARIA API client — analyze() and refine() |
+| `server/ai/geminiNode.js` | Gemini technical analysis |
+| `server/data/dataAggregator.js` | Historical bar priming (Alpaca REST), news scraping, bundle creation |
+| `server/quantitative/macd.js` | MACD crossover detector (momentum trigger) |
+| `server/quantitative/bollingerRsi.js` | Bollinger+RSI detector (mean-reversion trigger) |
+| `server/quantitative/atr.js` | Average True Range calculator for dynamic stops |
+| `server/risk/validator.js` | 12-check pre-trade safety gate |
+| `server/risk/kellyCriterion.js` | Kelly position sizing with Platt-scaled AI confidence |
+| `server/risk/correlation.js` | Pearson correlation guard against open positions |
+| `server/execution/alpacaClient.js` | Alpaca SDK wrapper — submitOrder, closePosition, getOpenPositions |
+| `server/execution/tradeExecutor.js` | Full execution pipeline (steps 1-8) |
 | `server/db/tradeLogger.js` | HMAC-chained tamper-proof SQLite logging |
-| `public/index.html` | Dashboard — polls `/api/logs` for live terminal output |
+| `public/index.html` | Dashboard — polls `/api/logs` for live status |
 
 ---
 
-## Environment Variables (Critical Ones)
+## Environment Variables (Critical)
 
 ```env
 OLLAMA_MODEL=quant-trader        # NEVER change to llama3.1
-GEMINI_MODEL=gemini-flash-latest
+GEMINI_MODEL=gemini-1.5-flash    # Current working model
 OLLAMA_DESKTOP_IP=localhost      # Or Tailscale IP for remote Ollama
-APPROVAL_THRESHOLD=45            # Lower = more trades, higher = more selective
-WEIGHT_GEMINI=0.40
-WEIGHT_OLLAMA=0.25
-CRON_SCHEDULE=*/10 * * * *       # Every 10 minutes
-TRADING_MODE=paper               # Always paper until profitable
+OLLAMA_PORT=11434
+
+APPROVAL_THRESHOLD=55            # Min composite confidence to approve a trade
+WEIGHT_GEMINI=0.65               # Gemini weight in composite score
+WEIGHT_OLLAMA=0.35               # Ollama weight in composite score
+
+TRADING_MODE=paper               # 'paper' or 'live' — always paper until profitable
+WATCHED_SYMBOLS=BTC/USD,ETH/USD,SOL/USD,ADA/USD,DOGE/USD,AVAX/USD,DOT/USD,LINK/USD
+
+ATR_MULTIPLIER=2.0               # ATR multiplier for trailing stop distance
+KELLY_FRACTION_DIVISOR=4         # Divides full Kelly to get fractional Kelly
+MAX_POSITION_PCT=0.10            # Max 10% of portfolio per trade
+COOLDOWN_MINUTES=30              # Minimum minutes between trades on same symbol
+MAX_DAILY_LOSS_PCT=0.05          # Kill switch if daily loss > 5% of balance
+MAX_CONSECUTIVE_LOSSES=3         # Kill switch after 3 consecutive losses
+
+STOP_LOSS_PCT=0.02               # Fallback stop for orphaned positions (riskMonitor)
+TAKE_PROFIT_PCT=0.04             # Fallback target for orphaned positions (riskMonitor)
 ```
 
 ---
 
 ## Critical Implementation Details
 
-### Symbol Normalization
-- Internal/Alpaca format: `BTC/USD`
-- Yahoo Finance format: `BTC-USD`
-- Logic centralized in `server/data/dataAggregator.js` → `toYahooSymbol()`
-- **Never** pass raw Yahoo symbols to Alpaca or vice versa
+### Symbol Format Conventions
+| Context | Format | Example |
+|---------|--------|---------|
+| Internal / DB / WebSocket subscription | `BASE/USD` | `BTC/USD` |
+| Alpaca closePosition API | `BASEUSD` (no slash) | `BTCUSD` |
+| Alpaca submitOrder / getCryptoBars | `BASE/USD` | `BTC/USD` |
+| Alpaca getBarsV2 (stocks) | plain ticker | `AAPL` |
 
-### Market Hours
-- `loop.js` handles per-symbol logic
-- Crypto: always open (24/7, isCrypto=true bypasses market hours check)
-- Stocks: NYSE hours only (Mon–Fri 9:30–16:00 ET)
+**Never** mix these up. `alpacaClient.closePosition()` strips the slash automatically. `alpacaClient.submitOrder()` calls `normalizeSymbol()` which adds the slash for crypto.
 
-### Ollama Failure Handling
-- If Ollama returns `null` (offline/error), `redistributeWeights` gets only Gemini → still < 2 nodes → consensus aborts → NO_TRADE
-- This is correct — the system requires both nodes (or the Gemini-only path after gating is bypassed)
-- **Do not lower the 2-node minimum** without careful consideration of the risk implications
+### Alpaca SDK Quirks (IMPORTANT)
+- `getCryptoBars([symbol], opts)` → returns `Promise<Map<string, Bar[]>>`. Crypto bars use: `Close`, `High`, `Low`, `Open`, `Volume` (no "Price" suffix).
+- `getBarsV2(symbol, opts)` → returns an **async iterable** (NOT a Promise). Stock bars use: `ClosePrice`, `HighPrice`, `LowPrice`, `OpenPrice`, `Volume`.
+- `closePosition(symbol)` → expects `BTCUSD` format, NOT `BTC/USD`.
+- WebSocket crypto quotes: symbol field is `quote.S` (not `quote.Symbol`).
+- WebSocket stock quotes: symbol field is `quote.Symbol || quote.S`.
 
-### Gemini Rate Limits
-- `gemini-flash-latest` has generous free tier
-- The Ollama-first gating significantly reduces calls
-- If rate limits appear, increase the divergence threshold for the debate loop from 50 to 70
+### Crypto Trading Constraints
+- Alpaca **does not support short selling crypto**. `bollingerRsi.evaluate()` takes an `isCrypto` flag and returns `NO_TRADE` instead of `SHORT` when overbought.
+- Alpaca **does not support bracket orders for crypto**. Use the software risk monitor instead.
+- Alpaca crypto orders require `time_in_force: 'gtc'` (not `'day'`).
+- Minimum crypto order value is ~$10. Orders below this will get a 403 error.
 
-### Yahoo Finance Rate Limits
-- Symbol fetches are staggered by `SYMBOL_FETCH_DELAY_MS` (default 3000ms)
-- Do not decrease below 2000ms
-- Exponential backoff on 429 errors is implemented in `yahooFinance.js`
+### WebSocket Architecture
+The loop subscribes to **Quotes** (not Trades) because:
+- Quotes stream continuously even during low-volume periods
+- Mid-price `(bid + ask) / 2` is used as the close price for each tick
+- This ensures bars are always built, even overnight or in thin markets
+
+### Risk Monitor Symbol Mapping
+`riskMonitor.js` converts Alpaca's position format (`DOGEUSD`) back to internal format (`DOGE/USD`) using:
+```js
+if (/^[A-Z]+USD$/.test(symbol) && symbol !== 'USD') {
+  symbol = symbol.slice(0, -3) + '/USD';
+}
+```
+**Never** use `.replace('USD', '/USD')` — this creates `DOGE/USDUSD` for symbols that already contain USD in the base name.
 
 ---
 
 ## Deployment
 
 - **Process manager**: PM2 (Windows)
-- **Processes**: `ai-trader-api` (port 3000) + `ai-trader-loop`
-- **Persistence**: `pm2 startup` + `pm2 save` — survives reboots
-- **Logs**: `pm2 logs ai-trader-loop --lines 100` or watch via dashboard terminal
-- **Restart after .env changes**: `pm2 restart all --update-env`
+- **Processes**: `ai-trader-api` (Express, port 3000) + `ai-trader-loop` (autonomous trader)
+- **Entry points**: `server/index.js` (API) + `server/autonomous/scheduler.js` (loop)
+- **Persistence**: `pm2 startup` + `pm2 save` — survives reboots automatically
+- **Dashboard shortcut**: Desktop shortcut `AI Trader Dashboard.url` → `http://localhost:3000`
+- **Logs**: `pm2 logs ai-trader-loop --lines 100 --nostream`
+- **Restart**: `pm2 restart ai-trader-loop` (after code changes)
+- **Restart with env changes**: `pm2 restart all --update-env`
 
 ---
 
 ## Known Issues / Gotchas
 
-- `yahoo-finance2 v2.11.3` is pinned — do not upgrade without testing (breaking API changes)
-- Reuters RSS feed (`feeds.reuters.com`) is currently unreachable — this is a known external issue, not a code bug. Other RSS sources work fine.
-- `[yahooFinance.historical] Invalid options` warnings in PM2 error log are benign deprecation notices from the Yahoo library — not affecting data quality
-- ARIA (quant-trader) Ollama responses are extremely fast (~1-2s) because the model identity/persona is pre-baked, not injected per-request
-- **Cooldown Bug Fix**: Cooldown is now correctly tracked per-symbol (`last_trade_${symbol}`) instead of globally. Loop cycle timestamps are no longer used for cooldown calculation.
+- Reuters RSS feed (`feeds.reuters.com`) is DNS-unreachable — this is an external issue, not a bug. The scraper gracefully falls back to other sources.
+- `url.parse()` deprecation warnings in PM2 error log come from the `yahoo-finance2` library internals — they are harmless.
+- Paper trading WebSocket quotes come through slower than live trading — this is normal.
+- The correlation guard passes by default when history < 30 bars (insufficient data for Pearson). This is a safe fail-open behavior.
 
 ---
 
-## Relationship to "Betting Analysis"
+## Architecture Decision Log
 
-This project lives alongside a Python-based sports betting engine. They share conceptual architecture (EV scoring, Kelly sizing). Future integration goal: unified dashboard and shared signal intelligence layer.
+| Decision | Reason |
+|----------|--------|
+| Switched from polling to WebSocket event-driven | Faster reaction to price moves; no wasted API calls when nothing changes |
+| Subscribe to Quotes instead of Trades | Quotes stream 24/7 even in thin markets; trades only fire when actual transactions occur |
+| Mid-price `(bid+ask)/2` for bar close | More stable and continuous than last-trade price |
+| Software risk monitor for crypto | Alpaca doesn't support bracket/OCO orders for crypto — had to build custom |
+| Two-layer decision (AI regime + quant trigger) | AI alone produces too many false positives; quant layer acts as a deterministic confirmation gate |
+| Kelly with Platt scaling | Raw Kelly on AI confidence produces oversized positions; Platt-scaling maps confidence to realistic probabilities |

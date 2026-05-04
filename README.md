@@ -1,7 +1,7 @@
 # AI Trader — Autonomous Quantitative Trading System
 
 > **Status**: Active — Paper trading on Alpaca. Crypto-first (8 pairs), stock switching supported.  
-> **Version**: v3.1.0 — April 2026  
+> **Version**: v4.0.0 — May 2026  
 > **Language**: Node.js 18+  
 > **Capital**: Designed for small accounts ($500+). No PDT restrictions on crypto.
 
@@ -9,20 +9,25 @@
 
 ## What This Does
 
-An autonomous algorithmic trading system that runs 24/7, scans 8 crypto markets every 10 minutes, uses a dual-node AI consensus engine to identify high-confidence trade setups, and executes bracket orders on Alpaca (paper or live).
+An autonomous algorithmic trading system that runs 24/7, streams real-time quotes from Alpaca WebSockets, and uses a two-layer decision model to identify and execute high-confidence trades.
 
-The system is designed to **minimize paid API usage** by running sentiment analysis locally via a custom-trained Ollama model, only escalating to the cloud (Gemini) when a real signal is detected.
+**Two-Layer Decision Architecture:**
+- **Layer 1 (AI Regime)** — Gemini + Ollama classify the market as "momentum" or "mean-reverting"
+- **Layer 2 (Quant Trigger)** — MACD crossover (momentum) or Bollinger+RSI (mean-reverting) confirms entry direction
 
-**Signal pipeline per symbol:**
-1. **Data** — Yahoo Finance price/OHLCV + RSS news headlines aggregated into a research bundle
-2. **ARIA (Ollama)** — Local quantitative analyst model (`quant-trader`) reads news headlines → returns sentiment score −1.0 to +1.0. **Always runs first. Free.**
-3. **Cost-Saving Gate** — If ARIA's sentiment is weak AND technicals are neutral → skip Gemini entirely and save API costs
-4. **Gemini Node** — Cloud technical analysis (EMA, RSI, trend, regime) → score −100 to +100. **Only called when a real signal exists.**
-5. **AI Debate (Refinement)** — If Gemini and ARIA scores diverge by >50 points, ARIA is forced to read Gemini's technical thesis and reconsider its stance before a final score is produced
-6. **Consensus** — Weighted composite score (configurable weights), approval threshold 45
-7. **Validation** — 10-check pre-trade gate (kill switch, confidence, exposure, PDT, cooldown)
-8. **Execution** — Bracket order on Alpaca (entry + stop-loss + take-profit, atomic)
-9. **Logging** — HMAC-chained tamper-proof SQLite trade log
+Both layers must agree before a trade is placed. This dramatically reduces false positives.
+
+**Signal pipeline per symbol (fires every minute when a new bar completes):**
+1. **WebSocket** — Alpaca Quotes stream into a 1-minute bar buffer (mid-price of bid/ask)
+2. **Data** — Historical bars primed from Alpaca REST API + RSS news scraping
+3. **AI Consensus** — Gemini + ARIA (Ollama) classify market regime. AI Debate runs if they disagree.
+4. **Quant Trigger** — MACD (momentum) or Bollinger+RSI (mean-reverting) determines LONG/SHORT/NO_TRADE
+5. **Validation** — 12-check pre-trade gate (kill switch, correlation guard, exposure, cooldown, no crypto shorts)
+6. **Kelly Sizing** — Fractional Kelly with Platt-calibrated AI confidence
+7. **ATR Risk Rails** — Dynamic stop distance based on Average True Range (stored in DB for risk monitor)
+8. **Execution** — Market order on Alpaca (trailing stop for stocks, software monitor for crypto)
+9. **Risk Monitor** — Background loop every 60s checks crypto positions against ATR stop/target levels
+10. **Logging** — HMAC-chained tamper-proof SQLite trade log
 
 ---
 
@@ -30,24 +35,29 @@ The system is designed to **minimize paid API usage** by running sentiment analy
 
 ```
 server/
-├── index.js                  REST API + control panel (Express) + /api/logs streaming
+├── index.js                  REST API + control panel (Express)
 ├── autonomous/
-│   ├── loop.js               Main cycle: scan → analyze → trade → exit
-│   └── scheduler.js          node-cron scheduler (default: every 10 min)
+│   ├── loop.js               WebSocket handler — builds 1-min bars from quotes
+│   ├── scheduler.js          Entry point: starts stream + 60s risk monitor
+│   └── riskMonitor.js        Crypto software stop-loss/take-profit (every 60s)
 ├── ai/
-│   ├── consensus.js          Ollama-first weighted dual-node consensus engine
-│   ├── geminiNode.js         Technical analysis via Google Gemini Flash (gated)
-│   └── ollamaNode.js         ARIA — local quant analyst via custom Ollama model
+│   ├── consensus.js          Weighted dual-node regime consensus engine
+│   ├── geminiNode.js         Regime classification via Google Gemini Flash
+│   └── ollamaNode.js         ARIA — local quant analyst (analyze + refine)
 ├── data/
-│   ├── dataAggregator.js     Bundles price + indicators + headlines per symbol
-│   ├── yahooFinance.js       OHLCV, EMA9/21, RSI14, ATR, regime detection
-│   └── newsScraper.js        RSS feed scraper for additional headlines
+│   ├── dataAggregator.js     Historical bar priming (Alpaca REST) + news bundling
+│   └── newsScraper.js        RSS feed scraper for news headlines
+├── quantitative/
+│   ├── macd.js               MACD crossover detector (momentum entry trigger)
+│   ├── bollingerRsi.js       Bollinger+RSI detector (mean-reversion entry trigger)
+│   └── atr.js                Average True Range for dynamic stop sizing
 ├── execution/
-│   ├── alpacaClient.js       Alpaca SDK v3 — paper/live, crypto/stocks, bracket orders
-│   └── tradeExecutor.js      Kelly sizing → validate → bracket order → log
+│   ├── alpacaClient.js       Alpaca SDK wrapper — orders, positions, closePosition
+│   └── tradeExecutor.js      Full execution pipeline (sizing → validate → order → log)
 ├── risk/
-│   ├── kellyCriterion.js     Fractional Kelly with live Alpaca balance
-│   ├── validator.js          10-check pre-trade safety gate + PDT warning
+│   ├── kellyCriterion.js     Fractional Kelly with Platt-scaled AI confidence
+│   ├── validator.js          12-check pre-trade safety gate
+│   ├── correlation.js        Pearson correlation guard against open positions
 │   └── killSwitch.js         Auto (daily loss limit) + manual kill switch
 ├── db/
 │   ├── schema.js             SQLite: decisions, trades, strategy_memory, state

@@ -31,7 +31,7 @@ async function runChecks({ consensus, symbol, positionDollars, alpacaAccount, op
 
   // Total open exposure
   const openExposure = openPositions
-    ? openPositions.reduce((sum, p) => sum + Math.abs(parseFloat(p.market_value || 0)), 0)
+    ? openPositions.reduce((sum, p) => sum + Math.abs(parseFloat(p.marketValue || 0)), 0)
     : 0;
 
   // Compute Correlation

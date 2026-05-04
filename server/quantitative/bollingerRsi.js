@@ -57,9 +57,10 @@ function computeRSI(closes, period = 14) {
 /**
  * Evaluate Bollinger Bands + RSI for mean reversion
  * @param {Array} history - array of OHLCV bars
+ * @param {boolean} isCrypto - crypto assets cannot be shorted on Alpaca
  * @returns {string} 'LONG' | 'SHORT' | 'NO_TRADE'
  */
-function evaluate(history) {
+function evaluate(history, isCrypto = false) {
   if (!history || history.length < 21) return 'NO_TRADE';
 
   const closes = history.map(b => b.close);
@@ -79,13 +80,14 @@ function evaluate(history) {
   const upperBand = currentSMA + (2 * currentSD);
   const lowerBand = currentSMA - (2 * currentSD);
 
-  // Mean Reversion from bottom (Oversold)
+  // Mean Reversion from bottom (Oversold) — always valid
   if (currentClose <= lowerBand && currentRSI < 30) {
     return 'LONG';
   }
 
-  // Mean Reversion from top (Overbought)
+  // Mean Reversion from top (Overbought) — skip for crypto (cannot short)
   if (currentClose >= upperBand && currentRSI > 70) {
+    if (isCrypto) return 'NO_TRADE'; // Alpaca forbids shorting crypto
     return 'SHORT';
   }
 

@@ -32,7 +32,7 @@ async function execute({ bundle, consensus, decisionId }) {
   if (consensus.regime === 'momentum') {
     direction = macd.evaluate(bundle.history);
   } else if (consensus.regime === 'mean-reverting') {
-    direction = bollingerRsi.evaluate(bundle.history);
+    direction = bollingerRsi.evaluate(bundle.history, bundle.isCrypto);
   }
 
   if (direction === 'NO_TRADE') {
@@ -116,14 +116,16 @@ async function execute({ bundle, consensus, decisionId }) {
     return { executed: false, reason: `Alpaca Error: ${err.message}` };
   }
 
-  // Step 7: Log trade
+  // Step 7: Log trade — store ATR-derived stop/target so riskMonitor can pick them up
+  const atrStop   = direction === 'LONG' ? price - trailPrice : price + trailPrice;
+  const atrTarget = direction === 'LONG' ? price + (trailPrice * 2) : price - (trailPrice * 2);
   const tradeId = logTrade({
     symbol,
     direction,
     qty:            sizing.qty,
     entryPrice:     price,
-    stopLoss:       null, // Managed by Alpaca trail
-    targetPrice:    null,
+    stopLoss:       parseFloat(atrStop.toFixed(4)),
+    targetPrice:    parseFloat(atrTarget.toFixed(4)),
     alpacaOrderId:  order.orderId,
     decisionId,
     mode,

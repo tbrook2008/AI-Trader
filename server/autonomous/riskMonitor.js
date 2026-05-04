@@ -22,9 +22,9 @@ async function monitorCryptoRisk() {
 
   for (const pos of cryptoPositions) {
     let symbol = pos.symbol;
-    // Map Alpaca format 'DOGEUSD' back to internal 'DOGE/USD'
-    if (symbol.endsWith('USD') && symbol !== 'USD') {
-      symbol = symbol.replace('USD', '/USD');
+    // Map Alpaca format 'DOGEUSD' → internal 'DOGE/USD' using regex
+    if (/^[A-Z]+USD$/.test(symbol) && symbol !== 'USD') {
+      symbol = symbol.slice(0, -3) + '/USD';
     }
     
     const currentPrice = pos.currentPrice;
@@ -75,7 +75,8 @@ async function monitorCryptoRisk() {
         symbol, currentPrice, stopLoss, targetPrice 
       });
 
-      const res = await alpaca.closePosition(symbol);
+      // Pass the raw Alpaca symbol (pos.symbol) to closePosition, NOT the DB format
+      const res = await alpaca.closePosition(pos.symbol);
       if (res.closed) {
         const pnl = pos.unrealizedPL;
         if (tradeId) {
