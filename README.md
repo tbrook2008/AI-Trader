@@ -1,7 +1,7 @@
 # AI Trader — Autonomous Quantitative Trading System
 
-> **Status**: Active — Paper trading on Alpaca. Crypto-first (8 pairs), stock switching supported.  
-> **Version**: v4.0.0 — May 2026  
+> **Status**: Active — Paper trading on Alpaca. Crypto-first (8 pairs).  
+> **Version**: v4.1.0 — May 2026  
 > **Language**: Node.js 18+  
 > **Capital**: Designed for small accounts ($500+). No PDT restrictions on crypto.
 
@@ -12,22 +12,32 @@
 An autonomous algorithmic trading system that runs 24/7, streams real-time quotes from Alpaca WebSockets, and uses a two-layer decision model to identify and execute high-confidence trades.
 
 **Two-Layer Decision Architecture:**
-- **Layer 1 (AI Regime)** — Gemini + Ollama classify the market as "momentum" or "mean-reverting"
-- **Layer 2 (Quant Trigger)** — MACD crossover (momentum) or Bollinger+RSI (mean-reverting) confirms entry direction
+- **Layer 1 (AI Regime)** — Gemini 2.0 Flash + ARIA (Ollama) classify the market as `momentum` or `mean-reverting`
+- **Layer 2 (Quant Trigger)** — MACD v2 (momentum) or Bollinger+RSI v2 (mean-reverting) confirms entry direction with 4–5 gates each
 
 Both layers must agree before a trade is placed. This dramatically reduces false positives.
 
-**Signal pipeline per symbol (fires every minute when a new bar completes):**
-1. **WebSocket** — Alpaca Quotes stream into a 1-minute bar buffer (mid-price of bid/ask)
-2. **Data** — Historical bars primed from Alpaca REST API + RSS news scraping
-3. **AI Consensus** — Gemini + ARIA (Ollama) classify market regime. AI Debate runs if they disagree.
-4. **Quant Trigger** — MACD (momentum) or Bollinger+RSI (mean-reverting) determines LONG/SHORT/NO_TRADE
-5. **Validation** — 12-check pre-trade gate (kill switch, correlation guard, exposure, cooldown, no crypto shorts)
-6. **Kelly Sizing** — Fractional Kelly with Platt-calibrated AI confidence
-7. **ATR Risk Rails** — Dynamic stop distance based on Average True Range (stored in DB for risk monitor)
-8. **Execution** — Market order on Alpaca (trailing stop for stocks, software monitor for crypto)
-9. **Risk Monitor** — Background loop every 60s checks crypto positions against ATR stop/target levels
-10. **Logging** — HMAC-chained tamper-proof SQLite trade log
+---
+
+## Signal Pipeline (fires every 60 seconds per symbol)
+
+```
+Alpaca WebSocket Quote Stream
+    → 1-minute bar buffer (mid-price of bid/ask)
+    → dataAggregator: historical bar priming + news scraping (5-min cache)
+    → consensus: Gemini 2.0 Flash + ARIA regime classification
+        → circuit breaker: if Gemini 429/rate-limited, Ollama-only mode (threshold raised to 72)
+        → AI Debate: if nodes strongly disagree (>70 conf), ARIA refines its position
+    → tradeExecutor:
+        → macd.evaluate() OR bollingerRsi.evaluate() → LONG/SHORT/NO_TRADE
+        → volumeProfile.analyzeVolume() → blocks dead-volume entries
+        → kellyCriterion.getPositionSize() → fractional Kelly sizing
+        → validator.runChecks() → 12-point pre-trade safety gate
+        → calculateATR() → dynamic stop/target (3.5x ATR stop, 7.0x ATR target)
+        → alpacaClient.submitOrder() → market order on Alpaca
+        → tradeLogger.logTrade() → HMAC-chained SQLite record
+    → riskMonitor (every 60s): software stop-loss/take-profit for open crypto positions
+```
 
 ---
 
@@ -36,69 +46,73 @@ Both layers must agree before a trade is placed. This dramatically reduces false
 ```
 server/
 ├── index.js                  REST API + control panel (Express)
+│                             /api/status → live Alpaca balance (real-time)
+│                             /api/account → full account details
+│                             /api/positions → open positions
 ├── autonomous/
-│   ├── loop.js               WebSocket handler — builds 1-min bars from quotes
+│   ├── loop.js               WebSocket handler — 1-min bar builder + processSymbol()
 │   ├── scheduler.js          Entry point: starts stream + 60s risk monitor
-│   └── riskMonitor.js        Crypto software stop-loss/take-profit (every 60s)
+│   └── riskMonitor.js        Crypto software stop/target monitor (every 60s)
 ├── ai/
-│   ├── consensus.js          Weighted dual-node regime consensus engine
-│   ├── geminiNode.js         Regime classification via Google Gemini Flash
+│   ├── consensus.js          Weighted dual-node consensus + single-node degraded mode
+│   ├── geminiNode.js         Gemini 2.0 Flash — circuit breaker on 429/spending cap
 │   └── ollamaNode.js         ARIA — local quant analyst (analyze + refine)
 ├── data/
 │   ├── dataAggregator.js     Historical bar priming (Alpaca REST) + news bundling
-│   └── newsScraper.js        RSS feed scraper for news headlines
+│   └── newsScraper.js        RSS scraper — 9 feeds, 5-min cache, error throttling
 ├── quantitative/
-│   ├── macd.js               MACD crossover detector (momentum entry trigger)
-│   ├── bollingerRsi.js       Bollinger+RSI detector (mean-reversion entry trigger)
-│   └── atr.js                Average True Range for dynamic stop sizing
+│   ├── macd.js               MACD v2 — crossover + histogram + zero-line + bar body
+│   ├── bollingerRsi.js       Bollinger+RSI v2 — 5-gate: band + RSI + trend + body + momentum
+│   ├── atr.js                ATR calculator for dynamic stop sizing
+│   └── volumeProfile.js      Volume analysis — dead volume gate + classification
 ├── execution/
-│   ├── alpacaClient.js       Alpaca SDK wrapper — orders, positions, closePosition
-│   └── tradeExecutor.js      Full execution pipeline (sizing → validate → order → log)
+│   ├── alpacaClient.js       Alpaca SDK wrapper — orders, positions, account, closePosition
+│   └── tradeExecutor.js      Full 8-step execution pipeline with volume profile gate
 ├── risk/
-│   ├── kellyCriterion.js     Fractional Kelly with Platt-scaled AI confidence
-│   ├── validator.js          12-check pre-trade safety gate
+│   ├── kellyCriterion.js     Fractional Kelly (÷4) capped at 6% portfolio
+│   ├── validator.js          12-check pre-trade gate + post-loss cooldown multiplier
 │   ├── correlation.js        Pearson correlation guard against open positions
 │   └── killSwitch.js         Auto (daily loss limit) + manual kill switch
 ├── db/
 │   ├── schema.js             SQLite: decisions, trades, strategy_memory, state
-│   ├── tradeLogger.js        HMAC-chained trade log (tamper-proof)
+│   ├── tradeLogger.js        HMAC-chained tamper-proof trade log
 │   └── strategyMemory.js     Per-symbol win stats for adaptive Kelly sizing
 └── utils/
-    └── logger.js             Winston logger
+    └── logger.js             Winston logger (combined.log + console)
 
 Modelfile                     Custom ARIA quant-trader Ollama model definition
+test-all.js                   32 unit tests — run before every deployment
+test-full-cycle.js            End-to-end pipeline integration test (DRY_RUN)
 public/
-└── index.html                Live dashboard with real-time system terminal
+└── index.html                Live dashboard — real balance, trades, decisions, logs
 ```
 
 ---
 
 ## The ARIA Model (`quant-trader`)
 
-ARIA (Autonomous Risk & Intelligence Analyst) is a custom Ollama model built specifically for this project. It is **not** a modification of the base `llama3.1` — it is a separate named model that only this trader uses.
+ARIA (Autonomous Risk & Intelligence Analyst) is a custom Ollama model built specifically for this project. It is **not** a modification of the base `llama3.1` — it is a separately named model.
 
-**What makes it different from a stock LLM:**
+**What makes it different:**
 - Permanently baked-in identity as an elite quantitative analyst
-- 10 calibrated financial few-shot examples defining precise scoring standards
-- Hard rules: regulatory events always floor sentiment at ≤−0.7, no hedge-phrasing, no generic summaries
-- Crypto-specific awareness: BTC dominance correlation, DeFi risk, on-chain sentiment
+- 10 calibrated financial few-shot examples with precise scoring standards
+- Hard rules: regulatory events floor sentiment at ≤−0.7, no hedge-phrasing
+- Crypto-specific awareness: BTC dominance, DeFi risk, on-chain sentiment
 - Low temperature (0.1) baked in for decisive, consistent outputs
 
-**To rebuild the model from scratch:**
 ```bash
+# Rebuild the model from scratch
 ollama create quant-trader -f Modelfile
-```
 
-**To verify it exists:**
-```bash
-ollama list    # Should show: quant-trader, llama3.1 (separately)
+# Verify it exists
+ollama list    # Should show: quant-trader (separately from llama3.1)
 ```
 
 ---
 
 ## Quickstart
 
-### 1. Install
+### 1. Install dependencies
 ```bash
 npm install
 ```
@@ -108,39 +122,76 @@ npm install
 ollama create quant-trader -f Modelfile
 ```
 
-### 3. Configure
+### 3. Configure environment
 ```bash
-cp .env.template .env
-```
-Fill in these values in `.env`:
-```env
-GEMINI_API_KEY=AIza...          # Google AI Studio — free tier works, used sparingly
-ALPACA_API_KEY=PK...            # From alpaca.markets → Paper Trading → API Keys
-ALPACA_SECRET_KEY=...
-OLLAMA_DESKTOP_IP=localhost     # OR Tailscale IP if Ollama is on another machine
+# Edit .env with your API keys (see Key Configuration below)
 ```
 
-### 4. Smoke Tests
-Run in order, stop if any fail:
+### 4. Run tests
 ```bash
-npm run test:db       # Database initializes cleanly
-npm run test:data     # Yahoo Finance returns quotes (may rate-limit, retry once)
-npm run test:kelly    # Kelly math is correct
-npm run dry-run       # Full cycle without placing any orders
+node test-all.js          # 32 unit tests — must all pass before running
+node test-full-cycle.js   # End-to-end DRY_RUN integration test
 ```
 
-### 5. Run
-```bash
-npm start             # Server + auto-loop at localhost:3000
-```
-Or with PM2 for background operation:
+### 5. Start with PM2 (recommended)
 ```bash
 pm2 start ecosystem.config.js
-pm2 save              # Persist across reboots
+pm2 save                  # Persist across reboots
 ```
 
 ### 6. Monitor
-Open the dashboard at `http://localhost:3000` — includes a live system terminal that streams real-time log output.
+Open `http://localhost:3000` — live dashboard with real-time balance, trades, decisions, and logs.
+
+Or double-click the **AI Trader Dashboard** shortcut on your Desktop.
+
+---
+
+## Key Configuration (`.env`)
+
+```env
+# --- AI Models ---
+GEMINI_MODEL=gemini-2.0-flash        # Working model as of May 2026
+OLLAMA_MODEL=quant-trader            # NEVER change to llama3.1
+OLLAMA_DESKTOP_IP=localhost          # Or Tailscale IP for remote Ollama
+
+# --- What to trade ---
+WATCHED_SYMBOLS=BTC/USD,ETH/USD,SOL/USD,ADA/USD,DOGE/USD,AVAX/USD,DOT/USD,LINK/USD
+
+# --- AI Consensus ---
+WEIGHT_GEMINI=0.65
+WEIGHT_OLLAMA=0.35
+APPROVAL_THRESHOLD=62                # Two-node threshold (raised from 45 → 62)
+SINGLE_NODE_THRESHOLD=72             # Ollama-only threshold when Gemini is circuit-broken
+GEMINI_CIRCUIT_BREAK_MS=3600000     # Pause Gemini for 1hr after 429 (default)
+
+# --- ATR Risk Rails ---
+ATR_MULTIPLIER=3.5                   # Stop = 3.5x ATR from entry (raised from 2.0)
+ATR_TARGET_MULTIPLIER=2.0            # Target = 2x stop distance (1:2 R:R)
+TREND_FILTER_PERIOD=50               # SMA period for trend direction filter
+
+# --- Risk Management ---
+TRADING_MODE=paper                   # paper or live — always start with paper
+MAX_POSITION_PCT=0.06                # Max 6% portfolio per trade (reduced from 15%)
+MAX_CONCURRENT_POSITIONS=5
+MAX_DAILY_LOSS_PCT=0.03              # Kill switch at 3% daily drawdown (tightened)
+MAX_CONSECUTIVE_LOSSES=3
+COOLDOWN_MINUTES=45                  # Base cooldown (multiplied after losses)
+KELLY_FRACTION_DIVISOR=4
+```
+
+---
+
+## Risk Model (v4.1.0)
+
+| Rule | Value | Notes |
+|------|-------|-------|
+| Stop distance | ATR × 3.5 | ~0.28–0.45% for BTC on 1-min bars |
+| Target distance | Stop × 2.0 | 1:2 risk/reward |
+| Max position size | 6% of portfolio | Reduced from 15% after May 5 analysis |
+| Post-loss cooldown | 45 min × (losses+1) | 1 loss = 90 min, 2 = 135 min |
+| Daily loss limit | 3% of account | Triggers kill switch for rest of day |
+| Consecutive losses | 3 max | Kill switch |
+| Portfolio exposure | Max 40% | Across all open positions |
 
 ---
 
@@ -148,136 +199,117 @@ Open the dashboard at `http://localhost:3000` — includes a live system termina
 
 | Method | Route | Description |
 |--------|-------|-------------|
-| GET | `/api/status` | System health, live balance, kill switch state |
-| GET | `/api/decisions?limit=20` | Last N AI decisions with node scores |
-| GET | `/api/trades?limit=20` | Last N executed trades |
-| GET | `/api/logs` | Last 100 lines of the combined log file |
+| GET | `/api/status` | Live balance from Alpaca, kill switch, Gemini status |
+| GET | `/api/account` | Full account details + open positions |
+| GET | `/api/positions` | Open positions list |
+| GET | `/api/decisions?limit=20` | Last N AI decisions with regime + scores |
+| GET | `/api/trades?limit=20` | Last N executed trades with PnL |
+| GET | `/api/logs` | Last 30 lines of combined log |
 | GET | `/api/killswitch` | Kill switch status |
 | POST | `/api/killswitch` | `{"action":"activate"}` or `{"action":"deactivate"}` |
-| POST | `/api/run-now` | Trigger one analysis cycle immediately |
 | POST | `/api/mode` | `{"mode":"paper"}` or `{"mode":"live"}` |
 
 ---
 
-## Key Configuration (`.env`)
+## News Sources (Active)
 
-```env
-# What to trade
-WATCHED_SYMBOLS=BTC/USD,ETH/USD,SOL/USD,ADA/USD,DOGE/USD,AVAX/USD,DOT/USD,LINK/USD
+| Feed | Type | Status |
+|------|------|--------|
+| Yahoo Finance | General | ✅ Active |
+| MarketWatch | General | ✅ Active |
+| Seeking Alpha | General | ✅ Active |
+| Benzinga | General | ✅ Active |
+| Investing.com | General | ✅ Active |
+| CoinTelegraph | Crypto | ✅ Active |
+| CoinDesk | Crypto | ✅ Active |
+| Decrypt | Crypto | ✅ Active |
+| CryptoSlate | Crypto | ✅ Active |
+| Reuters | General | ❌ Removed (DNS unreachable) |
 
-# Switching to stocks (no code change needed):
-# WATCHED_SYMBOLS=SPY,AAPL,TSLA
-# Mixed (crypto 24/7, stocks during NYSE hours only):
-# WATCHED_SYMBOLS=BTC/USD,ETH/USD,SPY
-
-# Ollama model — do not change unless rebuilding ARIA
-OLLAMA_MODEL=quant-trader
-
-# Risk (current defaults)
-STOP_LOSS_PCT=0.015           # 1.5% stop per trade
-MAX_POSITION_PCT=0.15         # Max 15% portfolio per position
-MAX_CONCURRENT_POSITIONS=10   # Correlation guard
-MAX_DAILY_LOSS_PCT=0.05       # Kill switch trigger at 5% daily loss
-COOLDOWN_MINUTES=30           # Min time between trades on same symbol
-
-# AI Consensus
-APPROVAL_THRESHOLD=45         # Composite score needed to approve a trade
-WEIGHT_GEMINI=0.40            # Gemini weight (only active when gated in)
-WEIGHT_OLLAMA=0.25            # ARIA/Ollama weight
-```
+Feeds are cached for 5 minutes. Error warnings are throttled to once per 10 min per feed.
 
 ---
 
-## Ollama-First Cost Gating
+## Gemini Rate Limiting
 
-To conserve the Gemini API budget ($10/month cap), the consensus engine uses a **local-first strategy**:
+Gemini API has a monthly spending cap on the free tier. When the cap is hit:
+- System logs **one** `warn` message, then **silences** for 1 hour (circuit breaker)
+- Falls back to **Ollama-only** consensus (single-node mode)
+- Single-node approval threshold is raised to `72` (vs `62` for dual-node)
+- Trading continues automatically — only with stricter signal requirements
+- When cap resets: Gemini resumes automatically at next cycle
 
-```
-Every symbol cycle:
-  1. ARIA (quant-trader) reads news headlines → sentiment score [FREE]
-  2. IF abs(sentiment) >= 25 OR trend != 'neutral':
-       → Call Gemini for technical confirmation [PAID]
-       → Run AI Debate if scores diverge by >50 points
-     ELSE:
-       → Skip Gemini entirely, log "flat market" [FREE]
-  3. Compute weighted composite score
-  4. Approve / reject trade
-```
-
-This reduces Gemini API calls by ~70-90% when markets are quiet.
-
----
-
-## How the Cycle Works
-
-```
-Every 10 minutes:
-  1. Fetch live Alpaca balance
-  2. Check daily loss limit → kill switch if exceeded
-  3. Check open positions → emergency close if >7% loss
-  4. For each symbol in WATCHED_SYMBOLS:
-     a. If stock + market closed → skip
-     b. If open positions >= MAX_CONCURRENT_POSITIONS → stop scanning
-     c. Aggregate price + news data
-     d. Run ARIA first (local), then Gemini if signal detected
-     e. If approved AND direction != NO_TRADE:
-        - Kelly position sizing (live balance)
-        - 10-check validator
-        - Submit bracket order (entry + stop + target)
-        - Log to SQLite
-     f. Wait 3s before next symbol (Yahoo rate limit protection)
-```
-
----
-
-## Switching Between Paper and Live
-
-```bash
-# Stay on paper (default, always start here):
-TRADING_MODE=paper
-
-# Switch to live (only after 2+ weeks profitable paper trading):
-TRADING_MODE=live
-```
-
-Or via API at runtime (no restart needed):
-```bash
-curl -X POST http://localhost:3000/api/mode -H "Content-Type: application/json" -d '{"mode":"live"}'
-```
-
----
-
-## Risk Model
-
-- **Position size**: Fractional Kelly (÷2) capped at 15% of live portfolio
-- **Stop-loss**: 1.5% below entry (bracket order, atomic with entry)
-- **Emergency stop**: 7% unrealized loss triggers immediate close
-- **Daily loss limit**: 5% of account triggers kill switch for rest of day
-- **Consecutive losses**: 3 in a row triggers kill switch
-- **Cooldown**: 30 min minimum between trades on the SAME symbol (tracked individually)
+To check/raise your cap: https://ai.studio/spend
 
 ---
 
 ## Deployment (PM2 — Windows)
 
-The system runs headlessly via PM2 with two persistent processes:
-- `ai-trader-api` — Express REST API + dashboard server
-- `ai-trader-loop` — Autonomous trading cycle scheduler
+```bash
+# Start both processes
+pm2 start ecosystem.config.js
 
-Both are configured to start automatically on Windows boot via `pm2 startup`.
+# Restart with new .env values
+pm2 restart all --update-env
+
+# Check logs
+pm2 logs ai-trader-loop --lines 30 --nostream
+
+# Status
+pm2 list
+```
+
+Both `ai-trader-api` (port 3000) and `ai-trader-loop` auto-start on Windows boot.
 
 ---
 
-## Related Projects
+## Testing Protocol
 
-- **Betting Analysis** — Python MLB/NBA prop betting engine. Same conceptual architecture (EV scoring, Kelly sizing, confidence models). These two systems are designed to eventually share a unified dashboard.
+Run these before **every deployment**:
+```bash
+node test-all.js          # 32 unit tests covering ATR, MACD, Bollinger, Volume, Kelly, RSI
+node test-full-cycle.js   # End-to-end DRY_RUN — must complete without crash
+```
 
 ---
 
-## Roadmap
+## Changelog
 
-- [ ] Phase 1: WebSocket real-time data for intraday signals (5-min candles)
-- [ ] Phase 2: Unified dashboard showing Alpaca trades + PrizePicks picks
-- [ ] Phase 3: True scalping mode (1-min candles, sub-minute cycles)
-- [ ] Phase 4: Shared signal layer between Betting Analysis and AI Trader
-- [ ] Phase 5: Fine-tune ARIA on historical financial news/price datasets
+### v4.1.0 (May 6, 2026)
+- **Gemini circuit breaker**: Detects 429/spending-cap, logs once, silent for 1hr
+- **Single-node consensus**: Ollama-only mode with raised threshold (72) when Gemini unavailable
+- **Live balance API**: `/api/status` now fetches real portfolio value from Alpaca
+- **News overhaul**: Removed dead Reuters feed, added CoinTelegraph/CoinDesk/Decrypt/CryptoSlate
+- **RSS caching**: 5-min feed cache stops per-bar HTTP fetching; error throttling (once/10min)
+- **BollingerRsi v2**: 50-bar SMA trend filter + bar body confirmation + RSI momentum guard
+- **MACD v2**: Histogram acceleration + zero-line filter + bar body confirmation
+- **volumeProfile.js (NEW)**: Dead volume gate + volume classification
+- **ATR**: 2.0x → 3.5x (stops now 0.28–0.45% vs 0.16% that kept getting hit by noise)
+- **Max position**: 15% → 6% of portfolio per trade
+- **Cooldown**: 30min → 45min base + post-loss multiplier (2x, 3x)
+- **Approval threshold**: 45 → 62 (reduced approval rate from 78% to ~45%)
+- **Gemini model**: Fixed gemini-1.5-flash → gemini-2.0-flash (1.5 was deprecated)
+- **flushBars crash fix**: Snapshot copy prevents race condition on undefined bar
+- **MaxListeners warning**: setMaxListeners(20) on both WebSocket clients
+
+### v4.0.0 (May 4, 2026)
+- Event-driven WebSocket architecture (Quotes stream → 1-min bar buffer)
+- Dual-layer decision model: AI regime → Quant trigger
+- ATR-derived stop/target stored in DB for software risk monitor
+- Symbol normalization bugs fixed (DOGE/USDUSD, DOTUSDUSD etc.)
+- Bollinger+RSI: crypto short guard added (Alpaca cannot short crypto)
+- Validator: fixed marketValue property name mismatch
+
+---
+
+## Switching to Live Trading
+
+```bash
+# In .env
+TRADING_MODE=live
+
+# Restart
+pm2 restart all --update-env
+```
+
+> ⚠️ Only do this after 2+ weeks of consistently profitable paper trading. Start with small capital.

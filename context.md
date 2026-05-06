@@ -2,6 +2,8 @@
 
 This document provides essential context for any AI agent continuing development or maintenance of this system. Read this **before** making any changes.
 
+> **Standing Protocol**: After every code change — run `node test-all.js`, push to git, update this file and `README.md`.
+
 ---
 
 ## Project Vision
@@ -35,9 +37,9 @@ Alpaca WebSocket Quotes (crypto + stocks)
 
 ### AI Pipeline (Regime Classification)
 1. **ARIA (Ollama / `quant-trader`)** — always runs first. Local, free, fast. Reads news headlines, returns `{regime, confidence, summary}`.
-2. **Gemini Node** — always runs (model: `gemini-2.0-flash`). Returns `{regime, confidence, thesis, keyRisk}`.
+2. **Gemini Node** — model: `gemini-2.0-flash`. Has a **circuit breaker**: on 429/spending-cap, logs once as `warn`, then skips Gemini for `GEMINI_CIRCUIT_BREAK_MS` (default 1hr). Auto-retries after timeout.
 3. **AI Debate** — if regimes conflict AND max confidence > 70, Ollama `refine()` re-evaluates against Gemini's thesis.
-4. **Weighted Composite** — Gemini 65% / Ollama 35%. Approval threshold: **62** (raised from 55 to cut weak signals).
+4. **Weighted Composite** — Gemini 65% / Ollama 35%. Approval threshold: **62** (dual-node) or **72** (single-node / Ollama-only mode).
 
 ### Quantitative Execution Triggers (v2 — Multi-Gate)
 
@@ -71,14 +73,14 @@ All 4 gates must pass:
 
 | File | Purpose |
 |------|---------|
-| `Modelfile` | ARIA model definition |
 | `server/autonomous/scheduler.js` | Entry point — starts WebSocket stream + 60s risk monitor |
 | `server/autonomous/loop.js` | WebSocket handler — builds 1-min bars from quote stream |
 | `server/autonomous/riskMonitor.js` | Crypto stop-loss/take-profit monitor (every 60s) |
-| `server/ai/consensus.js` | Regime classification pipeline — Gemini + Ollama |
+| `server/ai/consensus.js` | Regime classification pipeline — Gemini + Ollama + single-node degraded mode |
 | `server/ai/ollamaNode.js` | ARIA API client — analyze() and refine() |
-| `server/ai/geminiNode.js` | Gemini regime analysis (model: gemini-2.0-flash) |
+| `server/ai/geminiNode.js` | Gemini 2.0-flash — circuit breaker for 429/spending-cap |
 | `server/data/dataAggregator.js` | Historical bar priming (Alpaca REST), news bundling |
+| `server/data/newsScraper.js` | 9 RSS feeds (Reuters removed), 5-min cache, error throttling |
 | `server/quantitative/macd.js` | MACD v2 — crossover + histogram + zero-line + bar body |
 | `server/quantitative/bollingerRsi.js` | Bollinger+RSI v2 — 5-gate filter with trend + momentum |
 | `server/quantitative/atr.js` | ATR calculator for dynamic stops |
@@ -88,6 +90,7 @@ All 4 gates must pass:
 | `server/risk/correlation.js` | Pearson correlation guard |
 | `server/execution/alpacaClient.js` | Alpaca SDK wrapper |
 | `server/execution/tradeExecutor.js` | Full 8-step execution pipeline |
+| `server/index.js` | Express API — `/api/status` fetches LIVE balance from Alpaca |
 | `server/db/tradeLogger.js` | HMAC-chained tamper-proof SQLite log |
 | `test-all.js` | Unit test suite (32 tests) — run before any deployment |
 | `test-full-cycle.js` | End-to-end integration test (DRY_RUN=true) |
@@ -102,7 +105,9 @@ OLLAMA_MODEL=quant-trader        # NEVER change to llama3.1
 GEMINI_MODEL=gemini-2.0-flash    # Working model as of May 2026
 OLLAMA_DESKTOP_IP=localhost      # Or Tailscale IP for remote Ollama
 
-APPROVAL_THRESHOLD=62            # Raised from 55 — reduces approval rate to ~45%
+APPROVAL_THRESHOLD=62            # Dual-node threshold
+SINGLE_NODE_THRESHOLD=72         # Ollama-only threshold (Gemini circuit-broken)
+GEMINI_CIRCUIT_BREAK_MS=3600000 # How long to pause Gemini after 429 (1hr)
 WEIGHT_GEMINI=0.65
 WEIGHT_OLLAMA=0.35
 
@@ -157,6 +162,31 @@ if (/^[A-Z]+USD$/.test(symbol) && symbol !== 'USD') {
 - **Working model**: `gemini-2.0-flash` (as of May 2026). `gemini-1.5-flash` returns 404.
 - If you see 429 (spending cap exceeded): the free tier quota was hit. Wait for reset or upgrade.
 - Gemini failure is handled gracefully — Ollama continues alone, consensus uses 1-node weights.
+
+### Gemini Circuit Breaker
+```js
+// geminiNode.js — when Gemini returns 429 or spending cap error:
+// 1. Log ONE warn message with reset time
+// 2. Set _circuitOpenUntil = Date.now() + GEMINI_CIRCUIT_BREAK_MS
+// 3. All subsequent calls return null silently until circuit resets
+// 4. consensus.js checks geminiNode.isAvailable() before calling it
+// 5. If unavailable → single-node mode with SINGLE_NODE_THRESHOLD (72)
+```
+
+### Live Balance API
+```js
+// server/index.js — /api/status now calls alpacaClient.getAccount()
+// Returns: { portfolioValue, buyingPower, cash, equity, ... }
+// Falls back to PAPER_ACCOUNT_BALANCE env var if Alpaca API unreachable
+// Also exposes: /api/account (full details) and /api/positions (open positions)
+```
+
+### News Scraper (server/data/newsScraper.js)
+- Reuters **removed** (feeds.reuters.com DNS unreachable)
+- **Added**: CoinTelegraph, CoinDesk, Decrypt, CryptoSlate (crypto-specific)
+- **5-min cache**: feeds fetched once, reused across all 8 symbol cycles
+- **Error throttling**: warn logged max once per 10 min per feed (was every bar)
+- **Crypto symbol aliases**: btc→bitcoin, eth→ethereum, sol→solana, ada→cardano, doge→dogecoin, etc.
 
 ### Post-Loss Cooldown Logic
 ```js
