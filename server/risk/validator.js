@@ -6,12 +6,12 @@ const { isCryptoSymbol } = require('../data/dataAggregator');
 const { checkCorrelation } = require('./correlation');
 const logger = require('../utils/logger');
 
-const MIN_CONFIDENCE   = parseFloat(process.env.APPROVAL_THRESHOLD       || '45');
+const MIN_CONFIDENCE   = parseFloat(process.env.APPROVAL_THRESHOLD       || '62');
 const MAX_CONSEC_LOSS  = parseInt(process.env.MAX_CONSECUTIVE_LOSSES     || '3');
-const MAX_EXPOSURE_PCT = 0.5;   // 50% max total portfolio exposure
-const MAX_POSITION_PCT = parseFloat(process.env.MAX_POSITION_PCT         || '0.10');
-const COOLDOWN_MIN     = parseInt(process.env.COOLDOWN_MINUTES            || '30');
-const MAX_DAILY_LOSS   = parseFloat(process.env.MAX_DAILY_LOSS_PCT        || '0.05');
+const MAX_EXPOSURE_PCT = 0.40;   // 40% max total portfolio exposure (tightened from 50%)
+const MAX_POSITION_PCT = parseFloat(process.env.MAX_POSITION_PCT         || '0.06');
+const COOLDOWN_MIN     = parseInt(process.env.COOLDOWN_MINUTES            || '45');
+const MAX_DAILY_LOSS   = parseFloat(process.env.MAX_DAILY_LOSS_PCT        || '0.03');
 
 /**
  * Run all 11 pre-trade safety checks.
@@ -27,6 +27,9 @@ async function runChecks({ consensus, symbol, positionDollars, alpacaAccount, op
   const consecLoss  = parseInt(getState('consecutive_losses') || '0');
   const lastRunStr  = getState(`last_trade_${symbol}`) || '';
   const lastRunMs   = lastRunStr ? new Date(lastRunStr).getTime() : 0;
+  // Post-loss cooldown multiplier: double the wait after each consecutive loss
+  const cooldownMultiplier = consecLoss > 0 ? Math.min(consecLoss + 1, 3) : 1;
+  const effectiveCooldown  = COOLDOWN_MIN * cooldownMultiplier;
   const minsAgo     = (Date.now() - lastRunMs) / 60000;
 
   // Total open exposure
@@ -84,9 +87,9 @@ async function runChecks({ consensus, symbol, positionDollars, alpacaAccount, op
       detail: `Position: $${positionDollars.toFixed(0)} / max: $${(balance * MAX_POSITION_PCT).toFixed(0)}`,
     },
     {
-      name: `Cooldown ≥ ${COOLDOWN_MIN} min since last trade`,
-      passed: lastRunMs === 0 || minsAgo >= COOLDOWN_MIN,
-      detail: lastRunMs === 0 ? 'First trade' : `${minsAgo.toFixed(0)} min ago`,
+      name: `Cooldown ≥ ${COOLDOWN_MIN} min (×${Math.min(consecLoss + 1, 3)} after ${consecLoss} loss(es))`,
+      passed: lastRunMs === 0 || minsAgo >= effectiveCooldown,
+      detail: lastRunMs === 0 ? 'First trade' : `${minsAgo.toFixed(0)} min ago (need ${effectiveCooldown.toFixed(0)} min)`,
     },
     {
       name: 'No existing open position',

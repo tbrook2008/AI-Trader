@@ -14,8 +14,12 @@ const tickBuffer = {};
 
 function startStream() {
   const client = alpacaClient.getClient();
-  const stockStream = client.data_stream_v2;
+  const stockStream  = client.data_stream_v2;
   const cryptoStream = client.crypto_stream_v1beta3;
+
+  // Prevent MaxListenersExceededWarning on WebSocket reconnect loops
+  stockStream.setMaxListeners  && stockStream.setMaxListeners(20);
+  cryptoStream.setMaxListeners && cryptoStream.setMaxListeners(20);
 
   stockStream.onConnect(() => {
     logger.info('Connected to Alpaca Stock WebSocket');
@@ -66,12 +70,14 @@ async function handleTick(symbol, price, size, timestamp) {
 }
 
 async function flushBars() {
-  const symbols = Object.keys(tickBuffer);
-  for (const symbol of symbols) {
-    const bar = tickBuffer[symbol];
-    delete tickBuffer[symbol];
-    
-    // Process the completed minute bar
+  const snapshot = { ...tickBuffer };     // snapshot before clearing
+  for (const symbol of Object.keys(snapshot)) {
+    delete tickBuffer[symbol];            // clear buffer entry
+    const bar = snapshot[symbol];
+    if (!bar || typeof bar.close !== 'number') {
+      logger.warn(`flushBars: invalid bar for ${symbol}, skipping`, { bar });
+      continue;
+    }
     logger.info(`Flushed 1-min bar for ${symbol}`, { close: bar.close, volume: bar.volume });
     await processSymbol(symbol, bar);
   }

@@ -18,7 +18,7 @@ Be decisive. Uncertainty is acceptable — express it via lower confidence.`;
  */
 async function analyze(bundle) {
   const model = getGenAI().getGenerativeModel({
-    model: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
+    model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
     generationConfig: { responseMimeType: 'application/json' },
   });
 

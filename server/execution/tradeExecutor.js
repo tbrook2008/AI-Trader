@@ -14,9 +14,11 @@ const logger        = require('../utils/logger');
 const macd = require('../quantitative/macd');
 const bollingerRsi = require('../quantitative/bollingerRsi');
 const { calculateATR } = require('../quantitative/atr');
+const { analyzeVolume, classifyVolume } = require('../quantitative/volumeProfile');
 
-const DRY_RUN = process.env.DRY_RUN === 'true';
-const ATR_MULTIPLIER = parseFloat(process.env.ATR_MULTIPLIER || '2.0');
+const DRY_RUN            = process.env.DRY_RUN === 'true';
+const ATR_MULTIPLIER     = parseFloat(process.env.ATR_MULTIPLIER        || '3.5');
+const ATR_TARGET_MULT    = parseFloat(process.env.ATR_TARGET_MULTIPLIER || '2.0');
 
 /**
  * Full trade execution pipeline.
@@ -30,7 +32,7 @@ async function execute({ bundle, consensus, decisionId }) {
   // Step 1: Quantitative Trigger
   let direction = 'NO_TRADE';
   if (consensus.regime === 'momentum') {
-    direction = macd.evaluate(bundle.history);
+    direction = macd.evaluate(bundle.history, bundle.isCrypto);
   } else if (consensus.regime === 'mean-reverting') {
     direction = bollingerRsi.evaluate(bundle.history, bundle.isCrypto);
   }
@@ -91,8 +93,18 @@ async function execute({ bundle, consensus, decisionId }) {
     return { executed: false, reason: 'Insufficient ATR data' };
   }
 
-  const trailPrice = atrValue * ATR_MULTIPLIER;
+  const trailPrice  = atrValue * ATR_MULTIPLIER;
+  const targetDist  = atrValue * ATR_MULTIPLIER * ATR_TARGET_MULT;
   const side = direction === 'LONG' ? 'buy' : 'sell';
+
+  // Step 5b: Volume Profile check
+  const volAnalysis = analyzeVolume(bundle.history, direction);
+  const volClass    = classifyVolume(bundle.history);
+  logger.info('Volume profile', { symbol, volume: volClass, ratio: volAnalysis.ratio?.toFixed(2), reason: volAnalysis.reason });
+  if (!volAnalysis.supported) {
+    logger.warn('Trade blocked by volume profile', { symbol, reason: volAnalysis.reason, ratio: volAnalysis.ratio });
+    return { executed: false, reason: `Volume: ${volAnalysis.reason}` };
+  }
 
   if (DRY_RUN) {
     logger.info('🔍 DRY RUN — no order submitted', {
@@ -118,7 +130,7 @@ async function execute({ bundle, consensus, decisionId }) {
 
   // Step 7: Log trade — store ATR-derived stop/target so riskMonitor can pick them up
   const atrStop   = direction === 'LONG' ? price - trailPrice : price + trailPrice;
-  const atrTarget = direction === 'LONG' ? price + (trailPrice * 2) : price - (trailPrice * 2);
+  const atrTarget = direction === 'LONG' ? price + targetDist  : price - targetDist;
   const tradeId = logTrade({
     symbol,
     direction,
