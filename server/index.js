@@ -4,7 +4,7 @@ const path          = require('path');
 const { initDb, getState, setState } = require('./db/schema');
 const { getRecentDecisions, getRecentTrades, getDailyPnl } = require('./db/tradeLogger');
 const killSwitch    = require('./risk/killSwitch');
-const { runLoop }   = require('./autonomous/loop');
+const alpacaClient  = require('./execution/alpacaClient');
 const logger        = require('./utils/logger');
 
 const app  = express();
@@ -20,28 +20,55 @@ initDb();
 // API ROUTES
 // ─────────────────────────────────────────────
 
-/** System health & status */
-app.get('/api/status', (req, res) => {
-  const mode       = process.env.TRADING_MODE || 'paper';
-  const balance    = mode === 'live'
-    ? parseFloat(process.env.LIVE_ACCOUNT_BALANCE  || '5000')
-    : parseFloat(process.env.PAPER_ACCOUNT_BALANCE || '100000');
-
-  res.json({
-    ok:              true,
-    mode:            mode.toUpperCase(),
-    balance,
-    killSwitch:      killSwitch.isActive(),
-    killReason:      killSwitch.getReason(),
-    lastRun:         getState('last_run') || null,
-    dailyPnl:        getDailyPnl(),
-    consecutiveLoss: parseInt(getState('consecutive_losses') || '0'),
-    totalTrades:     parseInt(getState('total_trades') || '0'),
-    totalWins:       parseInt(getState('total_wins') || '0'),
-    watchedSymbols:  (process.env.WATCHED_SYMBOLS || '').split(',').map(s => s.trim()),
-    schedule:        process.env.CRON_SCHEDULE || '*/15 * * * *',
-    uptime:          Math.floor(process.uptime()),
-  });
+/** System health & status — fetches LIVE balance from Alpaca */
+app.get('/api/status', async (req, res) => {
+  try {
+    const account = await alpacaClient.getAccount();
+    res.json({
+      ok:              true,
+      mode:            (process.env.TRADING_MODE || 'paper').toUpperCase(),
+      balance:         account.portfolioValue,
+      buyingPower:     account.buyingPower,
+      cash:            account.cash,
+      equity:          account.equity,
+      killSwitch:      killSwitch.isActive(),
+      killReason:      killSwitch.getReason(),
+      lastRun:         getState('last_run') || null,
+      dailyPnl:        getDailyPnl(),
+      consecutiveLoss: parseInt(getState('consecutive_losses') || '0'),
+      totalTrades:     parseInt(getState('total_trades')       || '0'),
+      totalWins:       parseInt(getState('total_wins')         || '0'),
+      watchedSymbols:  (process.env.WATCHED_SYMBOLS || '').split(',').map(s => s.trim()),
+      geminiStatus:    require('./ai/geminiNode').isAvailable() ? 'online' : 'circuit-open',
+      uptime:          Math.floor(process.uptime()),
+    });
+  } catch (err) {
+    // Fallback to env value if Alpaca API is unreachable
+    logger.warn('Could not fetch live balance from Alpaca', { error: err.message });
+    const mode    = process.env.TRADING_MODE || 'paper';
+    const balance = mode === 'live'
+      ? parseFloat(process.env.LIVE_ACCOUNT_BALANCE  || '5000')
+      : parseFloat(process.env.PAPER_ACCOUNT_BALANCE || '100000');
+    res.json({
+      ok:              true,
+      mode:            mode.toUpperCase(),
+      balance,
+      buyingPower:     null,
+      cash:            null,
+      equity:          null,
+      killSwitch:      killSwitch.isActive(),
+      killReason:      killSwitch.getReason(),
+      lastRun:         getState('last_run') || null,
+      dailyPnl:        getDailyPnl(),
+      consecutiveLoss: parseInt(getState('consecutive_losses') || '0'),
+      totalTrades:     parseInt(getState('total_trades')       || '0'),
+      totalWins:       parseInt(getState('total_wins')         || '0'),
+      watchedSymbols:  (process.env.WATCHED_SYMBOLS || '').split(',').map(s => s.trim()),
+      geminiStatus:    'unknown',
+      uptime:          Math.floor(process.uptime()),
+      balanceSource:   'env_fallback',
+    });
+  }
 });
 
 /** Recent AI decisions */
@@ -89,14 +116,31 @@ app.post('/api/mode', (req, res) => {
   res.json({ ok: true, mode });
 });
 
+/** Live account details from Alpaca */
+app.get('/api/account', async (req, res) => {
+  try {
+    const account   = await alpacaClient.getAccount();
+    const positions = await alpacaClient.getOpenPositions();
+    res.json({ ok: true, account, positions });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/** Open positions */
+app.get('/api/positions', async (req, res) => {
+  try {
+    const positions = await alpacaClient.getOpenPositions();
+    res.json(positions);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /** Manually trigger one analysis cycle */
 app.post('/api/run-now', async (req, res) => {
   logger.info('Manual cycle triggered via API');
-  // Run async, return immediately
-  runLoop()
-    .then(r => logger.info('Manual cycle complete', r))
-    .catch(e => logger.error('Manual cycle error', { error: e.message }));
-  res.json({ ok: true, message: 'Cycle started — check /api/decisions for results' });
+  res.json({ ok: true, message: 'Event-driven system is always running — check /api/logs for activity' });
 });
 
 /** Fetch recent live logs */
