@@ -287,7 +287,7 @@
         <table>
           <thead>
             <tr>
-              <th>Time</th>
+              <th>Date / Time</th>
               <th>Asset</th>
               <th>Action</th>
               <th>P&L</th>
@@ -389,7 +389,9 @@
     if (!trades.length) return;
 
     $('trades-tbody').innerHTML = trades.map(t => {
-      const time = new Date(t.timestamp).toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
+      const dt = new Date(t.timestamp);
+      const time = dt.toLocaleDateString('en-US', { month:'short', day:'numeric' })
+               + ', ' + dt.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
       const pnl = t.pnl != null ? (t.pnl >= 0 ? `+$${t.pnl.toFixed(2)}` : `-$${Math.abs(t.pnl).toFixed(2)}`) : '—';
       const pnlCl = t.pnl > 0 ? 'val-green' : t.pnl < 0 ? 'val-red' : '';
       const dirCl = t.direction === 'LONG' ? 'val-green' : 'val-red';
