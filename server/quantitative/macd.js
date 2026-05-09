@@ -1,17 +1,12 @@
 /**
  * server/quantitative/macd.js
- * v2 — MACD Momentum Entry Trigger with Trend Filter + Histogram Confirmation
- *
- * Improvements over v1:
- * 1. MACD histogram threshold — crossover must have meaningful separation
- * 2. Trend alignment — MACD must be on the correct side of zero
- * 3. Bar body confirmation — entry bar must close in direction of trade
- * 4. Volume confirmation — bar volume must meet minimum threshold
+ * v2.1 — Relaxed MACD Momentum Trigger
+ * 
+ * Relaxed constraints to ensure higher trade frequency while maintaining 
+ * core momentum checks.
  */
 
-const VOL_MULTIPLIER = parseFloat(process.env.VOLUME_SPIKE_MULTIPLIER || '1.0');
-
-// ─── Utility ─────────────────────────────────────────────────────────────────
+const VOL_MULTIPLIER = parseFloat(process.env.VOLUME_SPIKE_MULTIPLIER || '0.8'); // Lowered from 1.0
 
 function computeEMA(closes, period) {
   if (closes.length < period) return [];
@@ -26,21 +21,14 @@ function computeEMA(closes, period) {
   return emas;
 }
 
-// ─── Main Evaluator ───────────────────────────────────────────────────────────
-
 /**
  * Evaluate MACD for a momentum entry.
  *
- * Gates (ALL must pass):
- * 1. MACD bullish/bearish crossover (line crosses signal)
- * 2. MACD histogram growing in crossover direction (momentum is accelerating)
- * 3. MACD line on correct side of zero (confirms macro trend)
- * 4. Bar body confirmation — entry candle closed in trade direction
- * 5. Volume above 20-bar average (liquidity)
- *
- * @param {Array} history - OHLCV bars [{open, high, low, close, volume}]
- * @param {boolean} isCrypto - for future use
- * @returns {string} 'LONG' | 'SHORT' | 'NO_TRADE'
+ * Gates (Relaxed):
+ * 1. Bullish/Bearish crossover OR MACD moving away from signal with high momentum
+ * 2. Histogram acceleration
+ * 3. Volume above 80% of 20-bar average
+ * 4. Bar body confirmation (Directional candle)
  */
 function evaluate(history, isCrypto = false) {
   if (!history || history.length < 35) return 'NO_TRADE';
@@ -52,7 +40,6 @@ function evaluate(history, isCrypto = false) {
   const ema12 = computeEMA(closes, 12);
   const ema26 = computeEMA(closes, 26);
 
-  // Build MACD line
   const macdLine = closes.map((_, i) =>
     (ema12[i] !== null && ema26[i] !== null) ? ema12[i] - ema26[i] : null
   );
@@ -75,34 +62,31 @@ function evaluate(history, isCrypto = false) {
     return 'NO_TRADE';
   }
 
-  // ── Volume filter ──
+  // Volume filter (Relaxed)
   const avgVolume = volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
   const volumeOK  = avgVolume === 0 || volumes[last] >= avgVolume * VOL_MULTIPLIER;
   if (!volumeOK) return 'NO_TRADE';
 
-  // Histogram (spread between MACD and Signal)
   const currentHistogram = currentMacd - currentSignal;
   const prevHistogram    = prevMacd - prevSignal;
+  const currentBarBody   = closes[last] - opens[last];
 
-  const currentBarBody = closes[last] - opens[last];
-
-  // ── LONG: Bullish crossover ──
-  if (
-    prevMacd <= prevSignal && currentMacd > currentSignal && // 1. Bullish crossover
-    currentHistogram > prevHistogram &&                       // 2. Histogram growing (momentum accelerating)
-    currentMacd > 0 &&                                        // 3. MACD above zero (macro uptrend)
-    currentBarBody > 0                                        // 4. Entry bar closed green
-  ) {
+  // ── LONG: Bullish ──
+  const isBullishCrossover = prevMacd <= prevSignal && currentMacd > currentSignal;
+  const isBullishContinuation = currentHistogram > prevHistogram && currentHistogram > 0 && prevHistogram > 0;
+  
+  if ((isBullishCrossover || isBullishContinuation) && currentBarBody > 0) {
+    // REQUISITE: If not a crossover, histogram must be expanding significantly
+    if (!isBullishCrossover && (currentHistogram <= prevHistogram * 1.1)) return 'NO_TRADE';
     return 'LONG';
   }
 
-  // ── SHORT: Bearish crossover ──
-  if (
-    prevMacd >= prevSignal && currentMacd < currentSignal && // 1. Bearish crossover
-    currentHistogram < prevHistogram &&                       // 2. Histogram growing negative
-    currentMacd < 0 &&                                        // 3. MACD below zero (macro downtrend)
-    currentBarBody < 0                                        // 4. Entry bar closed red
-  ) {
+  // ── SHORT: Bearish ──
+  const isBearishCrossover = prevMacd >= prevSignal && currentMacd < currentSignal;
+  const isBearishContinuation = currentHistogram < prevHistogram && currentHistogram < 0 && prevHistogram < 0;
+
+  if ((isBearishCrossover || isBearishContinuation) && currentBarBody < 0) {
+    if (!isBearishCrossover && (currentHistogram >= prevHistogram * 1.1)) return 'NO_TRADE';
     return 'SHORT';
   }
 
