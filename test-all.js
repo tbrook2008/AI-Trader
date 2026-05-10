@@ -4,6 +4,7 @@
  * Run: node test-all.js
  */
 require('dotenv').config();
+process.env.AGGRESSIVE_MODE = 'false'; // Ensure standard behavior for tests
 const { computeEMA } = require('./server/quantitative/macd');
 const { computeSMA, computeSD, computeRSI } = require('./server/quantitative/bollingerRsi');
 const { calculateATR } = require('./server/quantitative/atr');

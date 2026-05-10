@@ -1,13 +1,11 @@
 /**
  * server/quantitative/bollingerRsi.js
- * v2.1 — Relaxed Mean-Reversion Entry Trigger
- * 
- * Removed strict trend filter for mean reversion to allow bottom-fishing 
- * in volatile periods.
+ * v2.2 — Bollinger/RSI Trigger (Aggressive Mode Support)
  */
 
 const TREND_PERIOD   = parseInt(process.env.TREND_FILTER_PERIOD    || '50');
-const VOL_MULTIPLIER = parseFloat(process.env.VOLUME_SPIKE_MULTIPLIER || '0.7'); // Lowered from 1.0
+const VOL_MULTIPLIER = parseFloat(process.env.VOLUME_SPIKE_MULTIPLIER || '0.7');
+const AGGRESSIVE     = process.env.AGGRESSIVE_MODE === 'true';
 
 function computeSMA(values, period) {
   const sma = new Array(values.length).fill(null);
@@ -74,31 +72,32 @@ function evaluate(history, isCrypto = false) {
 
   if (currentSMA === null || currentSD === null || currentRSI === null) return 'NO_TRADE';
 
+  // Volume filter (Bypassed in Aggressive Mode)
   const avgVolume = volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
-  const volumeOK  = avgVolume === 0 || currentVolume >= avgVolume * VOL_MULTIPLIER;
+  const volumeOK  = AGGRESSIVE || avgVolume === 0 || currentVolume >= avgVolume * VOL_MULTIPLIER;
   if (!volumeOK) return 'NO_TRADE';
 
   const upperBand = currentSMA + (2 * currentSD);
   const lowerBand = currentSMA - (2 * currentSD);
 
+  // Buffer for "near touch" in aggressive mode
+  const touchBuffer = AGGRESSIVE ? 1.015 : 1.001; // 1.5% buffer vs 0.1%
+
   // ── LONG: Oversold recovery ──
-  if (
-    currentClose <= lowerBand * 1.001 && // Touch or near lower band
-    currentRSI < 35 &&                   // RSI oversold
-    currentClose > currentOpen &&        // Bullish candle
-    (prevRSI !== null && currentRSI > prevRSI) // RSI turning up
-  ) {
+  const isOversold = currentClose <= lowerBand * touchBuffer;
+  const rsiOK      = AGGRESSIVE ? currentRSI < 40 : currentRSI < 35;
+  const momentumOK = AGGRESSIVE ? true : (prevRSI !== null && currentRSI > prevRSI);
+  const bodyOK     = AGGRESSIVE ? true : currentClose > currentOpen;
+
+  if (isOversold && rsiOK && momentumOK && bodyOK) {
     return 'LONG';
   }
 
   // ── SHORT: Overbought rejection ──
-  if (
-    !isCrypto && 
-    currentClose >= upperBand * 0.999 && // Touch or near upper band
-    currentRSI > 65 &&                   // RSI overbought
-    currentClose < currentOpen &&        // Bearish candle
-    (prevRSI !== null && currentRSI < prevRSI) // RSI turning down
-  ) {
+  const isOverbought = currentClose >= upperBand * (2 - touchBuffer);
+  const rsiHigh      = AGGRESSIVE ? currentRSI > 60 : currentRSI > 65;
+
+  if (!isCrypto && isOverbought && rsiHigh && momentumOK && bodyOK) {
     return 'SHORT';
   }
 

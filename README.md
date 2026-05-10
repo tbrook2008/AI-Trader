@@ -1,7 +1,7 @@
 # AI Trader — Autonomous Quantitative Trading System
 
 > **Status**: Active — Paper trading on Alpaca. Crypto-first (8 pairs).  
-> **Version**: v4.1.0 — May 2026  
+> **Version**: v4.1.1 — May 2026  
 > **Language**: Node.js 18+  
 > **Capital**: Designed for small accounts ($500+). No PDT restrictions on crypto.
 
@@ -274,6 +274,12 @@ node test-full-cycle.js   # End-to-end DRY_RUN — must complete without crash
 ---
 
 ## Changelog
+
+### v4.1.1 (May 9, 2026)
+- **Universal Risk Monitor**: Now scans and protects ALL open Alpaca positions (stocks + crypto). Orphans/manual trades receive default 2% stop / 4% target.
+- **Relaxed MACD v2.1**: Removed strict zero-line filter; allowed momentum continuation entries.
+- **Relaxed Bollinger v2.1**: Removed strict 50-bar SMA trend filter for mean reversion.
+- **Volume Sensitivity**: Lowered volume requirement to 70-80% of average.
 
 ### v4.1.0 (May 6, 2026)
 - **Gemini circuit breaker**: Detects 429/spending-cap, logs once, silent for 1hr

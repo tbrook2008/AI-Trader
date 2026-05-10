@@ -1,12 +1,10 @@
 /**
  * server/quantitative/macd.js
- * v2.1 — Relaxed MACD Momentum Trigger
- * 
- * Relaxed constraints to ensure higher trade frequency while maintaining 
- * core momentum checks.
+ * v2.2 — MACD Momentum Trigger (Aggressive Mode Support)
  */
 
-const VOL_MULTIPLIER = parseFloat(process.env.VOLUME_SPIKE_MULTIPLIER || '0.8'); // Lowered from 1.0
+const VOL_MULTIPLIER = parseFloat(process.env.VOLUME_SPIKE_MULTIPLIER || '0.7');
+const AGGRESSIVE     = process.env.AGGRESSIVE_MODE === 'true';
 
 function computeEMA(closes, period) {
   if (closes.length < period) return [];
@@ -21,15 +19,6 @@ function computeEMA(closes, period) {
   return emas;
 }
 
-/**
- * Evaluate MACD for a momentum entry.
- *
- * Gates (Relaxed):
- * 1. Bullish/Bearish crossover OR MACD moving away from signal with high momentum
- * 2. Histogram acceleration
- * 3. Volume above 80% of 20-bar average
- * 4. Bar body confirmation (Directional candle)
- */
 function evaluate(history, isCrypto = false) {
   if (!history || history.length < 35) return 'NO_TRADE';
 
@@ -62,9 +51,9 @@ function evaluate(history, isCrypto = false) {
     return 'NO_TRADE';
   }
 
-  // Volume filter (Relaxed)
+  // Volume filter (Bypassed in Aggressive Mode)
   const avgVolume = volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
-  const volumeOK  = avgVolume === 0 || volumes[last] >= avgVolume * VOL_MULTIPLIER;
+  const volumeOK  = AGGRESSIVE || avgVolume === 0 || volumes[last] >= avgVolume * VOL_MULTIPLIER;
   if (!volumeOK) return 'NO_TRADE';
 
   const currentHistogram = currentMacd - currentSignal;
@@ -73,20 +62,20 @@ function evaluate(history, isCrypto = false) {
 
   // ── LONG: Bullish ──
   const isBullishCrossover = prevMacd <= prevSignal && currentMacd > currentSignal;
-  const isBullishContinuation = currentHistogram > prevHistogram && currentHistogram > 0 && prevHistogram > 0;
+  const isBullishContinuation = currentHistogram > prevHistogram && currentHistogram > 0;
   
-  if ((isBullishCrossover || isBullishContinuation) && currentBarBody > 0) {
-    // REQUISITE: If not a crossover, histogram must be expanding significantly
-    if (!isBullishCrossover && (currentHistogram <= prevHistogram * 1.1)) return 'NO_TRADE';
+  // In AGGRESSIVE mode, we don't strictly require a positive candle body if it's a strong crossover
+  const bodyConfirmation = AGGRESSIVE ? true : currentBarBody > 0;
+
+  if ((isBullishCrossover || (AGGRESSIVE && isBullishContinuation)) && bodyConfirmation) {
     return 'LONG';
   }
 
   // ── SHORT: Bearish ──
   const isBearishCrossover = prevMacd >= prevSignal && currentMacd < currentSignal;
-  const isBearishContinuation = currentHistogram < prevHistogram && currentHistogram < 0 && prevHistogram < 0;
+  const isBearishContinuation = currentHistogram < prevHistogram && currentHistogram < 0;
 
-  if ((isBearishCrossover || isBearishContinuation) && currentBarBody < 0) {
-    if (!isBearishCrossover && (currentHistogram >= prevHistogram * 1.1)) return 'NO_TRADE';
+  if ((isBearishCrossover || (AGGRESSIVE && isBearishContinuation)) && bodyConfirmation) {
     return 'SHORT';
   }
 
