@@ -181,6 +181,9 @@ app.get('*', (req, res) => {
 });
 
 // ─────────────────────────────────────────────
+// Start Trading Engine
+require('./autonomous/scheduler');
+// ─────────────────────────────────────────────
 
 app.listen(PORT, () => {
   logger.info(`🌐 Control panel: http://localhost:${PORT}`);

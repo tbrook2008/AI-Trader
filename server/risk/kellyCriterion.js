@@ -80,7 +80,7 @@ function calculateQty(positionDollars, price) {
  * @param {number|null} liveBalance  Pass the real Alpaca portfolio_value. Falls back to env if omitted.
  * @param {number} aiConfidence      The composite confidence score from the AI consensus
  */
-function getPositionSize(symbol, currentPrice, liveBalance = null, aiConfidence = 50) {
+function getPositionSize(symbol, currentPrice, liveBalance = null, aiConfidence = 50, buyingPower = null) {
   // Prefer the live balance passed in from tradeExecutor (fetched from Alpaca API)
   const isLive = (process.env.TRADING_MODE || 'paper') === 'live';
   const balance = liveBalance ?? (isLive
@@ -99,7 +99,17 @@ function getPositionSize(symbol, currentPrice, liveBalance = null, aiConfidence 
     aiConfidence,
   });
 
-  const finalSize = Math.min(positionSize, maxPosition);
+  let finalSize = Math.min(Math.max(positionSize, 10), maxPosition);
+
+  // If buying power is specified, cap finalSize to buyingPower (minus 5% for slippage padding)
+  if (buyingPower !== null && finalSize > buyingPower * 0.95) {
+    if (buyingPower < 10.5) {
+      finalSize = 0; // cannot even satisfy the $10 minimum
+    } else {
+      finalSize = buyingPower * 0.95;
+    }
+  }
+
   const qty = calculateQty(finalSize, currentPrice);
 
   return {

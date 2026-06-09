@@ -95,6 +95,12 @@ function updateTradeOutcome({ tradeId, exitPrice, pnl, status }) {
   logger.info('Trade outcome updated', { tradeId, pnl, status });
 }
 
+function updateTradeStopLoss(tradeId, stopLoss) {
+  const db = getDb();
+  db.prepare('UPDATE trades SET stop_loss = ? WHERE id = ?').run(stopLoss, tradeId);
+  logger.info('Trade stop loss updated in DB', { tradeId, stopLoss });
+}
+
 function getRecentDecisions(limit = 20) {
   return getDb()
     .prepare('SELECT * FROM ai_decisions ORDER BY id DESC LIMIT ?')
@@ -123,4 +129,4 @@ function getDailyPnl() {
   return storedDate === today ? parseFloat(getState('daily_pnl') || '0') : 0;
 }
 
-module.exports = { logDecision, logTrade, updateTradeOutcome, getRecentDecisions, getRecentTrades, getOpenTradeBySymbol, getDailyPnl };
+module.exports = { logDecision, logTrade, updateTradeOutcome, updateTradeStopLoss, getRecentDecisions, getRecentTrades, getOpenTradeBySymbol, getDailyPnl };

@@ -1,7 +1,7 @@
 # AI Trader — Autonomous Quantitative Trading System
 
 > **Status**: Active — Paper trading on Alpaca. Crypto-first (8 pairs).  
-> **Version**: v4.1.1 — May 2026  
+> **Version**: v4.1.0 — May 2026  
 > **Language**: Node.js 18+  
 > **Capital**: Designed for small accounts ($500+). No PDT restrictions on crypto.
 
@@ -9,11 +9,11 @@
 
 ## What This Does
 
-An autonomous algorithmic trading system that runs 24/7, streams real-time quotes from Alpaca WebSockets, and uses a two-layer decision model to identify and execute high-confidence trades.
+An autonomous algorithmic trading system that runs 24/7, streams real-time quotes from Alpaca WebSockets, and uses an advanced two-layer statistical model to identify and execute high-confidence trades without relying on LLMs or generic retail indicators.
 
 **Two-Layer Decision Architecture:**
-- **Layer 1 (AI Regime)** — Gemini 2.0 Flash + ARIA (Ollama) classify the market as `momentum` or `mean-reverting`
-- **Layer 2 (Quant Trigger)** — MACD v2 (momentum) or Bollinger+RSI v2 (mean-reverting) confirms entry direction with 4–5 gates each
+- **Layer 1 (Regime Classification)** — Hidden Markov Model (HMM) via Gaussian Mixture Model classifies the market as `momentum` (low-vol) or `mean-reverting` (high-vol).
+- **Layer 2 (Quant Trigger)** — Kalman Filter (momentum) tracks velocity and acceleration, OR Ornstein-Uhlenbeck Process (mean-reverting) buys at deep Z-score deviations from the calibrated equilibrium.
 
 Both layers must agree before a trade is placed. This dramatically reduces false positives.
 
@@ -25,11 +25,9 @@ Both layers must agree before a trade is placed. This dramatically reduces false
 Alpaca WebSocket Quote Stream
     → 1-minute bar buffer (mid-price of bid/ask)
     → dataAggregator: historical bar priming + news scraping (5-min cache)
-    → consensus: Gemini 2.0 Flash + ARIA regime classification
-        → circuit breaker: if Gemini 429/rate-limited, Ollama-only mode (threshold raised to 72)
-        → AI Debate: if nodes strongly disagree (>70 conf), ARIA refines its position
+    → hmm: GMM-based regime classification (momentum or mean-reverting)
     → tradeExecutor:
-        → macd.evaluate() OR bollingerRsi.evaluate() → LONG/SHORT/NO_TRADE
+        → kalman.evaluate() OR ouModel.evaluate() → LONG/SHORT/NO_TRADE
         → volumeProfile.analyzeVolume() → blocks dead-volume entries
         → kellyCriterion.getPositionSize() → fractional Kelly sizing
         → validator.runChecks() → 12-point pre-trade safety gate
@@ -61,13 +59,14 @@ server/
 │   ├── dataAggregator.js     Historical bar priming (Alpaca REST) + news bundling
 │   └── newsScraper.js        RSS scraper — 9 feeds, 5-min cache, error throttling
 ├── quantitative/
-│   ├── macd.js               MACD v2 — crossover + histogram + zero-line + bar body
-│   ├── bollingerRsi.js       Bollinger+RSI v2 — 5-gate: band + RSI + trend + body + momentum
+│   ├── kalman.js             1D State-Space Kalman Filter for velocity tracking
+│   ├── ouModel.js            Ornstein-Uhlenbeck process calibrated via exact linear regression
+│   ├── hmm.js                Gaussian Mixture Model for volatility regime classification
 │   ├── atr.js                ATR calculator for dynamic stop sizing
 │   └── volumeProfile.js      Volume analysis — dead volume gate + classification
 ├── execution/
 │   ├── alpacaClient.js       Alpaca SDK wrapper — orders, positions, account, closePosition
-│   └── tradeExecutor.js      Full 8-step execution pipeline with volume profile gate
+│   └── tradeExecutor.js      Full execution pipeline leveraging statistical models
 ├── risk/
 │   ├── kellyCriterion.js     Fractional Kelly (÷4) capped at 6% portfolio
 │   ├── validator.js          12-check pre-trade gate + post-loss cooldown multiplier
@@ -243,7 +242,7 @@ To check/raise your cap: https://ai.studio/spend
 
 ---
 
-## Deployment (PM2 — Windows)
+## Deployment (PM2 — Local Windows)
 
 ```bash
 # Start both processes
@@ -263,6 +262,31 @@ Both `ai-trader-api` (port 3000) and `ai-trader-loop` auto-start on Windows boot
 
 ---
 
+## Deployment (Cloud — DigitalOcean Droplet)
+
+The trader and AI agent are also deployed on a **DigitalOcean Droplet (1GB RAM)** for 24/7 stable operation, preventing Out-Of-Memory (OOM) kills.
+
+**Cloud Stack:**
+- **PM2 (`AI-Trader`)**: Runs the main trading bot.
+- **PM2 (`AGY-Web`)**: Runs `ttyd` providing a browser-based web terminal to access the `agy` CLI remotely.
+
+**Accessing the Web Terminal:**
+1. Navigate to `http://165.227.200.194:8080` in Safari/Chrome.
+2. Login with credentials:
+   - Username: `admin`
+   - Password: `TraderBot2026`
+3. The terminal connects you directly to the `agy` instance. The instance runs with the `-W` flag allowing full writable input.
+
+**Syncing Code (Local <-> Cloud):**
+Code is synchronized via Git. Since the cloud instance operates headless, you must `git commit` and `git push` changes from the local machine, then `git pull` on the droplet.
+
+```bash
+# Pull changes on the cloud droplet
+ssh root@165.227.200.194 "cd /root/AITrader && git pull origin main"
+```
+
+---
+
 ## Testing Protocol
 
 Run these before **every deployment**:
@@ -274,12 +298,6 @@ node test-full-cycle.js   # End-to-end DRY_RUN — must complete without crash
 ---
 
 ## Changelog
-
-### v4.1.1 (May 9, 2026)
-- **Universal Risk Monitor**: Now scans and protects ALL open Alpaca positions (stocks + crypto). Orphans/manual trades receive default 2% stop / 4% target.
-- **Relaxed MACD v2.1**: Removed strict zero-line filter; allowed momentum continuation entries.
-- **Relaxed Bollinger v2.1**: Removed strict 50-bar SMA trend filter for mean reversion.
-- **Volume Sensitivity**: Lowered volume requirement to 70-80% of average.
 
 ### v4.1.0 (May 6, 2026)
 - **Gemini circuit breaker**: Detects 429/spending-cap, logs once, silent for 1hr

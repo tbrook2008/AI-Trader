@@ -91,22 +91,21 @@ async function submitOrder({ symbol, qty, side, stopPrice, takeProfitPrice, trai
   orderParams.qty = isCrypto ? qty.toString() : Math.floor(qty).toString();
 
   // If a trailPrice is provided, use an OTO trailing stop, else use standard bracket
-  if (!isCrypto) {
-    if (trailPrice) {
-      orderParams.order_class = 'oto';
-      orderParams.stop_loss = { trail_price: trailPrice.toFixed(2) };
-    } else {
-      orderParams.order_class = 'bracket';
-      if (stopPrice) {
-        orderParams.stop_loss = { stop_price: stopPrice.toFixed(2) };
-      }
-      if (takeProfitPrice) {
-        orderParams.take_profit = { limit_price: takeProfitPrice.toFixed(2) };
-      }
+  if (trailPrice) {
+    orderParams.order_class = 'oto';
+    orderParams.stop_loss = { trail_price: trailPrice.toFixed(2) };
+  } else {
+    orderParams.order_class = 'bracket';
+    if (stopPrice) {
+      orderParams.stop_loss = { stop_price: stopPrice.toFixed(2) };
+    }
+    if (takeProfitPrice) {
+      orderParams.take_profit = { limit_price: takeProfitPrice.toFixed(2) };
     }
   }
 
   logger.info(`Submitting ${orderParams.order_class || 'market'} order to Alpaca: ${alpacaSymbol} | Qty: ${orderParams.qty} | Side: ${orderParams.side}`);
+  logger.info(`Exact orderParams: ${JSON.stringify(orderParams)}`);
 
   const order = await getClient().createOrder(orderParams);
 
@@ -149,9 +148,7 @@ function normalizeSymbol(symbol) {
 }
 
 function isCryptoSymbol(symbol) {
-  const cryptos = ['BTC', 'ETH', 'SOL', 'ADA', 'DOGE', 'AVAX', 'DOT', 'LINK', 'LTC'];
-  const base = symbol.split(/[-/]/)[0].toUpperCase();
-  return cryptos.includes(base);
+  return symbol.includes('/') || symbol.endsWith('USD');
 }
 
 module.exports = {

@@ -1,18 +1,13 @@
-const { scrapeForSymbol } = require('./newsScraper');
 const alpacaClient = require('../execution/alpacaClient');
 const logger = require('../utils/logger');
 
 // Local buffer of historical bars to compute indicators
 const barsHistory = {};
 
-const CRYPTO_BASES = ['BTC', 'ETH', 'SOL', 'ADA', 'DOGE', 'AVAX', 'DOT', 'LINK', 'LTC', 'XRP', 'MATIC'];
+const CRYPTO_BASES = [];
 
 function isCryptoSymbol(symbol) {
-  let base = symbol.split(/[-/]/)[0].toUpperCase();
-  if (base.endsWith('USD') && base !== 'USD') {
-    base = base.replace('USD', '');
-  }
-  return CRYPTO_BASES.includes(base);
+  return symbol.includes('/') || symbol.endsWith('USD');
 }
 
 function getSearchTerm(symbol) {
@@ -47,7 +42,7 @@ async function primeHistory(symbol) {
       const resp = await client.getCryptoBars([symbol], {
         timeframe: '1Min',
         start: start.toISOString(),
-        limit: 100
+        limit: 1500
       });
       bars = resp.get(symbol) || [];
       barsHistory[symbol] = bars.map(b => ({
@@ -63,7 +58,7 @@ async function primeHistory(symbol) {
       const iter = client.getBarsV2(symbol, {
         timeframe: '1Min',
         start: start.toISOString(),
-        limit: 100
+        limit: 1500
       });
       for await (const b of iter) {
         bars.push({
@@ -87,11 +82,6 @@ async function primeHistory(symbol) {
  * Aggregate data and append the incoming live bar.
  */
 async function aggregate(symbol, latestBar) {
-  logger.info('Aggregating data from live bar', { symbol });
-
-  const searchTerm = getSearchTerm(symbol);
-  const isCrypto_  = isCryptoSymbol(symbol);
-
   // Prime history if needed
   if (!barsHistory[symbol]) {
     await primeHistory(symbol);
@@ -100,17 +90,12 @@ async function aggregate(symbol, latestBar) {
   // Append new live bar
   barsHistory[symbol].push(latestBar);
   
-  // Keep only the last 100 bars to prevent memory leaks
-  if (barsHistory[symbol].length > 100) {
+  // Keep only the last 1500 bars to prevent memory leaks
+  if (barsHistory[symbol].length > 1500) {
     barsHistory[symbol].shift();
   }
 
-  const [rssNews] = await Promise.allSettled([
-    scrapeForSymbol(searchTerm, 6),
-  ]);
-
-  const rss = rssNews.status === 'fulfilled' ? rssNews.value : [];
-  const allHeadlines = rss.map(n => ({ title: n.title, source: n.source })).slice(0, 12);
+  const isCrypto_  = isCryptoSymbol(symbol);
 
   const bundle = {
     symbol,
@@ -123,11 +108,7 @@ async function aggregate(symbol, latestBar) {
     volume:    latestBar.volume,
     
     // Pass the full historical array to be used by the deterministic quantitative scripts
-    history:   barsHistory[symbol],
-    
-    // News
-    headlines:    allHeadlines,
-    headlineText: allHeadlines.map(h => h.title).join(' | '),
+    history:   barsHistory[symbol]
   };
 
   return bundle;

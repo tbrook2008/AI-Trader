@@ -1,17 +1,14 @@
 const alpaca = require('../execution/alpacaClient');
-const { getOpenTradeBySymbol, updateTradeOutcome } = require('../db/tradeLogger');
+const { getOpenTradeBySymbol, updateTradeOutcome, logTrade, updateTradeStopLoss } = require('../db/tradeLogger');
+const { isCryptoSymbol } = require('../data/dataAggregator');
 const logger = require('../utils/logger');
 
 /**
- * server/autonomous/riskMonitor.js
- * v2.1 — Universal Risk Monitor
- * 
- * Periodically checks ALL open positions in the Alpaca account.
- * For known trades: uses DB-stored ATR stops/targets.
- * For orphaned/manual trades: applies default % limits from .env.
+ * Periodically checks open crypto positions against local DB stop-loss and take-profit limits.
+ * Required because Alpaca does not support OCO/Bracket orders natively for crypto.
  */
-async function monitorRisk() {
-  logger.info('🛡️ Running universal risk monitor...');
+async function monitorCryptoRisk() {
+  logger.info('🛡️ Running crypto risk monitor...');
   
   let positions;
   try {
@@ -21,54 +18,71 @@ async function monitorRisk() {
     return;
   }
 
-  if (!positions.length) return;
+  const cryptoPositions = positions.filter(p => isCryptoSymbol(p.symbol));
 
-  for (const pos of positions) {
-    let rawSymbol = pos.symbol;
-    let dbSymbol = rawSymbol;
-
-    // Normalize crypto symbol for DB lookup (Alpaca 'BTCUSD' → internal 'BTC/USD')
-    if (/^[A-Z]{3,5}USD$/.test(rawSymbol) && rawSymbol !== 'USD') {
-      dbSymbol = rawSymbol.slice(0, -3) + '/USD';
+  for (const pos of cryptoPositions) {
+    let symbol = pos.symbol;
+    // Map Alpaca format 'DOGEUSD' → internal 'DOGE/USD' using regex
+    if (/^[A-Z]+USD$/.test(symbol) && symbol !== 'USD') {
+      symbol = symbol.slice(0, -3) + '/USD';
     }
     
-    const currentPrice = parseFloat(pos.currentPrice);
-    const avgEntry    = parseFloat(pos.avgEntryPrice || pos.avgEntry);
+    const currentPrice = pos.currentPrice;
 
-    if (!currentPrice || isNaN(currentPrice)) {
-      logger.warn('Risk Monitor: Invalid current price', { symbol: rawSymbol });
+    if (!currentPrice) {
+      logger.warn('Risk Monitor: No current price available for position', { symbol });
       continue;
     }
 
-    // 1. Try to find the trade in our local database
-    const trade = getOpenTradeBySymbol(dbSymbol);
-    
-    let direction, stopLoss, targetPrice, tradeId;
+    const trade = getOpenTradeBySymbol(symbol);
+    let direction = 'LONG';
+    let stopLoss = null;
+    let targetPrice = null;
+    let tradeId = null;
 
     if (trade) {
-      direction   = trade.direction;
-      stopLoss    = trade.stop_loss;
+      direction = trade.direction;
+      stopLoss = trade.stop_loss;
       targetPrice = trade.target_price;
-      tradeId     = trade.id;
+      tradeId = trade.id;
     } else {
-      // 2. Failsafe: Handle orphaned or manual positions
-      direction = pos.side.toUpperCase() === 'LONG' ? 'LONG' : 'SHORT';
-      
-      const stopPct   = parseFloat(process.env.STOP_LOSS_PCT   || '0.02');
+      // Fail-safe: Apply default risk parameters to orphaned/manual Alpaca positions
+      direction = pos.side === 'long' ? 'LONG' : 'SHORT';
+      const stopPct = parseFloat(process.env.STOP_LOSS_PCT || '0.02');
       const targetPct = parseFloat(process.env.TAKE_PROFIT_PCT || '0.04');
       
       if (direction === 'LONG') {
-        stopLoss    = avgEntry * (1 - stopPct);
-        targetPrice = avgEntry * (1 + targetPct);
+        stopLoss = pos.avgEntry * (1 - stopPct);
+        targetPrice = pos.avgEntry * (1 + targetPct);
       } else {
-        stopLoss    = avgEntry * (1 + stopPct);
-        targetPrice = avgEntry * (1 - targetPct);
+        stopLoss = pos.avgEntry * (1 + stopPct);
+        targetPrice = pos.avgEntry * (1 - targetPct);
       }
+    }
 
-      // Log that we've "adopted" this position for risk monitoring
-      logger.info('Risk Monitor: Monitoring orphaned position', { 
-        symbol: rawSymbol, direction, entry: avgEntry, stopLoss, targetPrice 
-      });
+    // Implement Trailing Stop Logic
+    const ATR_MULTIPLIER = parseFloat(process.env.ATR_MULTIPLIER || '3.5');
+    // Calculate the trailing distance (distance from entry to original stop)
+    const trailDistance = Math.abs(pos.avgEntry - stopLoss);
+
+    if (direction === 'LONG') {
+      const newTrailingStop = currentPrice - trailDistance;
+      if (newTrailingStop > stopLoss) {
+        stopLoss = newTrailingStop;
+        if (tradeId) {
+          logger.info(`Ratcheting Trailing Stop UP for ${symbol} to $${stopLoss.toFixed(2)}`);
+          updateTradeStopLoss(tradeId, stopLoss);
+        }
+      }
+    } else if (direction === 'SHORT') {
+      const newTrailingStop = currentPrice + trailDistance;
+      if (newTrailingStop < stopLoss) {
+        stopLoss = newTrailingStop;
+        if (tradeId) {
+          logger.info(`Ratcheting Trailing Stop DOWN for ${symbol} to $${stopLoss.toFixed(2)}`);
+          updateTradeStopLoss(tradeId, stopLoss);
+        }
+      }
     }
 
     let trigger = null;
@@ -83,12 +97,13 @@ async function monitorRisk() {
 
     if (trigger) {
       logger.info(`🚨 Risk limit breached! Triggering ${trigger}`, { 
-        symbol: rawSymbol, currentPrice, stopLoss, targetPrice 
+        symbol, currentPrice, stopLoss, targetPrice 
       });
 
-      const res = await alpaca.closePosition(rawSymbol);
+      // Pass the raw Alpaca symbol (pos.symbol) to closePosition, NOT the DB format
+      const res = await alpaca.closePosition(pos.symbol);
       if (res.closed) {
-        const pnl = parseFloat(pos.unrealizedPl || 0);
+        const pnl = pos.unrealizedPL;
         if (tradeId) {
           updateTradeOutcome({
             tradeId: tradeId,
@@ -97,12 +112,12 @@ async function monitorRisk() {
             status: 'closed'
           });
         }
-        logger.info(`✅ Closed position successfully`, { symbol: rawSymbol, pnl });
+        logger.info(`✅ Closed position successfully`, { symbol, pnl });
       } else {
-        logger.error(`❌ Failed to close position during risk event`, { symbol: rawSymbol, reason: res.reason });
+        logger.error(`❌ Failed to close position during risk event`, { symbol, reason: res.reason });
       }
     }
   }
 }
 
-module.exports = { monitorCryptoRisk: monitorRisk }; // Exporting as monitorCryptoRisk for backward compatibility
+module.exports = { monitorCryptoRisk };

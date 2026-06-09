@@ -65,7 +65,7 @@ All 4 gates must pass:
 - **NEW: Post-Loss Cooldown Multiplier** — after 1 loss: 2x cooldown, after 2: 3x (max 3x). e.g., 45 min × 2 = 90 min after 1 loss.
 - **Max Position**: 6% of portfolio (reduced from 15%)
 - **Max Daily Loss**: 3% (reduced from 5%)
-- **Crypto**: Universal Risk Monitor v2.1 — Monitors ALL Alpaca positions (stocks + crypto)
+- **Crypto**: software risk monitor every 60s, no bracket orders
 
 ---
 
@@ -75,16 +75,16 @@ All 4 gates must pass:
 |------|---------|
 | `server/autonomous/scheduler.js` | Entry point — starts WebSocket stream + 60s risk monitor |
 | `server/autonomous/loop.js` | WebSocket handler — builds 1-min bars from quote stream |
-| `server/autonomous/riskMonitor.js` | Universal Risk Monitor v2.1 — Monitors ALL Alpaca positions (stocks + crypto) |
+| `server/autonomous/riskMonitor.js` | Crypto stop-loss/take-profit monitor (every 60s) |
 | `server/ai/consensus.js` | Regime classification pipeline — Gemini + Ollama + single-node degraded mode |
 | `server/ai/ollamaNode.js` | ARIA API client — analyze() and refine() |
 | `server/ai/geminiNode.js` | Gemini 2.0-flash — circuit breaker for 429/spending-cap |
 | `server/data/dataAggregator.js` | Historical bar priming (Alpaca REST), news bundling |
 | `server/data/newsScraper.js` | 9 RSS feeds (Reuters removed), 5-min cache, error throttling |
-| `server/quantitative/macd.js` | MACD v2.1 (Relaxed) — momentum + histogram + bar body |
-| `server/quantitative/bollingerRsi.js` | BollingerRsi v2.1 (Relaxed) — band + RSI + body + momentum |
+| `server/quantitative/macd.js` | MACD v2 — crossover + histogram + zero-line + bar body |
+| `server/quantitative/bollingerRsi.js` | Bollinger+RSI v2 — 5-gate filter with trend + momentum |
 | `server/quantitative/atr.js` | ATR calculator for dynamic stops |
-| `server/quantitative/volumeProfile.js` | Volume analysis — dead volume filter, exhaustion detection |
+| `server/quantitative/volumeProfile.js` | NEW: Volume analysis — dead volume filter, exhaustion detection |
 | `server/risk/validator.js` | 12-check pre-trade safety gate + post-loss cooldown multiplier |
 | `server/risk/kellyCriterion.js` | Kelly sizing (max 6% position) |
 | `server/risk/correlation.js` | Pearson correlation guard |

@@ -1,9 +1,8 @@
 require('dotenv').config();
-const macd = require('./server/quantitative/macd');
-const bollingerRsi = require('./server/quantitative/bollingerRsi');
+const hmm = require('./server/quantitative/hmm');
+const kalman = require('./server/quantitative/kalman');
+const ouModel = require('./server/quantitative/ouModel');
 const atr = require('./server/quantitative/atr');
-const adx = require('./server/quantitative/adx');
-const vwap = require('./server/quantitative/vwap');
 const alpacaClient = require('./server/execution/alpacaClient');
 
 const ATR_MULTIPLIER = 3.5;
@@ -117,27 +116,18 @@ async function runBacktest(symbol) {
     
     const history = data.slice(Math.max(0, i - 1500), i + 1);
     
-    let macdSignal = macd.evaluate(history.slice(-60), true);
-    let bollingerSignal = bollingerRsi.evaluate(history.slice(-60), true);
-    let vwapSignal = vwap.evaluate(history);
-    
-    const isTrending = adx.isTrending(history.slice(-60), 14, 25);
-    
-    if (macdSignal !== 'NO_TRADE' && !isTrending) macdSignal = 'NO_TRADE';
-    if (vwapSignal !== 'NO_TRADE' && !isTrending) vwapSignal = 'NO_TRADE';
+    const regime = hmm.classifyRegime(history.slice(-100));
+    const isTrending = regime === 'momentum';
     
     let signal = 'NO_TRADE';
     let strategy = '';
     
-    if (macdSignal !== 'NO_TRADE') {
-      signal = macdSignal;
-      strategy = 'MACD (Trend Filtered)';
-    } else if (bollingerSignal !== 'NO_TRADE') {
-      signal = bollingerSignal;
-      strategy = 'Bollinger+RSI';
-    } else if (vwapSignal !== 'NO_TRADE') {
-      signal = vwapSignal;
-      strategy = 'VWAP Breakout';
+    if (isTrending) {
+      signal = kalman.evaluate(history.slice(-100));
+      if (signal !== 'NO_TRADE') strategy = 'KalmanFilter';
+    } else {
+      signal = ouModel.evaluate(history.slice(-100));
+      if (signal !== 'NO_TRADE') strategy = 'OrnsteinUhlenbeck';
     }
     
     if (signal !== 'NO_TRADE') {

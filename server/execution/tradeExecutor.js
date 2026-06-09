@@ -13,40 +13,52 @@ const logger        = require('../utils/logger');
 
 const macd = require('../quantitative/macd');
 const bollingerRsi = require('../quantitative/bollingerRsi');
+const kalman = require('../quantitative/kalman');
+const ouModel = require('../quantitative/ouModel');
 const { calculateATR } = require('../quantitative/atr');
 const { analyzeVolume, classifyVolume } = require('../quantitative/volumeProfile');
+const hmm = require('../quantitative/hmm');
+const vwap = require('../quantitative/vwap');
 
 const DRY_RUN            = process.env.DRY_RUN === 'true';
 const ATR_MULTIPLIER     = parseFloat(process.env.ATR_MULTIPLIER        || '3.5');
 const ATR_TARGET_MULT    = parseFloat(process.env.ATR_TARGET_MULTIPLIER || '2.0');
 
 /**
- * Full trade execution pipeline.
- * @param {{ bundle, consensus, decisionId }} params
+ * Full trade execution pipeline based purely on math.
+ * @param {{ bundle }} params
  */
-async function execute({ bundle, consensus, decisionId }) {
+async function execute({ bundle }) {
   const symbol = bundle.symbol;
   const price  = bundle.price;
   const mode   = process.env.TRADING_MODE || 'paper';
+  const history = bundle.history;
 
-  // Step 1: Quantitative Trigger
+  // Step 1: Regime Classification via HMM (Gaussian Mixture Model)
+  const regime = hmm.classifyRegime(history);
+  const isTrending = regime === 'momentum';
+  
+  // Step 2: Quantitative Trigger
   let direction = 'NO_TRADE';
-  if (consensus.regime === 'momentum') {
-    direction = macd.evaluate(bundle.history, bundle.isCrypto);
-  } else if (consensus.regime === 'mean-reverting') {
-    direction = bollingerRsi.evaluate(bundle.history, bundle.isCrypto);
+  let strategy = '';
+
+  if (isTrending) {
+    direction = kalman.evaluate(history);
+    if (direction !== 'NO_TRADE') strategy = 'KalmanFilter';
+  } else {
+    direction = ouModel.evaluate(history);
+    if (direction !== 'NO_TRADE') strategy = 'OrnsteinUhlenbeck';
   }
 
   if (direction === 'NO_TRADE') {
-    logger.info('Quantitative trigger condition not met — skipping execution', { symbol, regime: consensus.regime });
     return { executed: false, reason: 'Quantitative trigger condition not met' };
   }
 
   logger.info('Trade executor started', {
     symbol,
     direction,
-    regime: consensus.regime,
-    score: consensus.compositeScore,
+    regime,
+    strategy
   });
 
   // Step 2: Fetch live account data
@@ -68,12 +80,17 @@ async function execute({ bundle, consensus, decisionId }) {
     return { executed: false, reason: 'Alpaca account trading blocked' };
   }
 
-  // Step 3: Kelly sizing
-  const sizing = kelly.getPositionSize(symbol, price, liveBalance, consensus.compositeScore);
+  // Step 3: Kelly sizing (no consensus score, default 80 confidence)
+  const sizing = kelly.getPositionSize(symbol, price, liveBalance, 80, account.buyingPower);
+  
+  if (sizing.qty === 0) {
+    logger.warn('Insufficient buying power for trade', { symbol, buyingPower: account.buyingPower });
+    return { executed: false, reason: 'Insufficient buying power' };
+  }
   
   // Step 4: Validation
   const validation = await validator.runChecks({
-    consensus: { ...consensus, direction }, // pass direction to validator
+    consensus: { approved: true, direction, regime }, // Mock consensus for validator backward compatibility
     symbol,
     positionDollars: sizing.positionDollars,
     alpacaAccount:   account,
@@ -124,7 +141,8 @@ async function execute({ bundle, consensus, decisionId }) {
     });
     logger.info(`✅ OTO Trailing Stop order submitted: ${symbol} | OrderID: ${order.orderId} | Qty: ${sizing.qty} | Trail: $${trailPrice.toFixed(2)}`);
   } catch (err) {
-    logger.error('❌ Order submission failed', { symbol, error: err.message });
+    const errorDetails = err.response ? err.response.data : err.message;
+    logger.error('❌ Order submission failed', { symbol, error: err.message, details: errorDetails });
     return { executed: false, reason: `Alpaca Error: ${err.message}` };
   }
 
@@ -139,7 +157,7 @@ async function execute({ bundle, consensus, decisionId }) {
     stopLoss:       parseFloat(atrStop.toFixed(4)),
     targetPrice:    parseFloat(atrTarget.toFixed(4)),
     alpacaOrderId:  order.orderId,
-    decisionId,
+    decisionId:     strategy, // Use strategy name as decision ID for logging
     mode,
   });
 
@@ -147,9 +165,9 @@ async function execute({ bundle, consensus, decisionId }) {
   memory.saveSetup({
     tradeId,
     symbol,
-    regime:         consensus.regime,
+    regime,
     direction,
-    compositeScore: consensus.compositeScore,
+    compositeScore: 80,
   });
 
   setState(`last_trade_${symbol}`, new Date().toISOString());

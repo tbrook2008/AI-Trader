@@ -1,8 +1,7 @@
-const macd = require('./server/quantitative/macd');
-const bollingerRsi = require('./server/quantitative/bollingerRsi');
+const hmm = require('./server/quantitative/hmm');
+const kalman = require('./server/quantitative/kalman');
+const ouModel = require('./server/quantitative/ouModel');
 const atr = require('./server/quantitative/atr');
-const adx = require('./server/quantitative/adx');
-const vwap = require('./server/quantitative/vwap');
 
 const ATR_MULTIPLIER = 3.5;
 const ATR_TARGET_MULTIPLIER = 2.0;
@@ -100,33 +99,18 @@ async function runBacktest() {
     
     const history = data.slice(Math.max(0, i - 1500), i); // VWAP needs 1440 bars
     
-    let macdSignal = macd.evaluate(history.slice(-60), true);
-    const bollingerSignal = bollingerRsi.evaluate(history.slice(-60), true);
-    let vwapSignal = vwap.evaluate(history);
-    
-    // Apply ADX Filter to MACD and VWAP
-    const isTrending = adx.isTrending(history.slice(-60), 14, 25);
-    
-    if (macdSignal !== 'NO_TRADE' && !isTrending) {
-      macdSignal = 'NO_TRADE'; // Filter out chopped MACD
-    }
-    
-    if (vwapSignal !== 'NO_TRADE' && !isTrending) {
-      vwapSignal = 'NO_TRADE'; // Filter out false VWAP breakouts
-    }
+    const regime = hmm.classifyRegime(history.slice(-100));
+    const isTrending = regime === 'momentum';
     
     let signal = 'NO_TRADE';
     let strategy = '';
     
-    if (macdSignal !== 'NO_TRADE') {
-      signal = macdSignal;
-      strategy = 'MACD (Trend Filtered)';
-    } else if (bollingerSignal !== 'NO_TRADE') {
-      signal = bollingerSignal;
-      strategy = 'Bollinger+RSI';
-    } else if (vwapSignal !== 'NO_TRADE') {
-      signal = vwapSignal;
-      strategy = 'VWAP Breakout';
+    if (isTrending) {
+      signal = kalman.evaluate(history.slice(-100));
+      if (signal !== 'NO_TRADE') strategy = 'KalmanFilter';
+    } else {
+      signal = ouModel.evaluate(history.slice(-100));
+      if (signal !== 'NO_TRADE') strategy = 'OrnsteinUhlenbeck';
     }
     
     if (signal !== 'NO_TRADE') {
@@ -156,21 +140,16 @@ async function runBacktest() {
     console.log(`Win Rate: ${((wins / trades.length) * 100).toFixed(2)}%`);
     console.log(`Total Net Profit: ${(totalProfit * 100).toFixed(2)}% (Unleveraged cumulative)`);
     
-    const macdTrades = trades.filter(t => t.strategy === 'MACD (Trend Filtered)');
-    const bBandsTrades = trades.filter(t => t.strategy === 'Bollinger+RSI');
-    const vwapTrades = trades.filter(t => t.strategy === 'VWAP Breakout');
+    const kalmanTrades = trades.filter(t => t.strategy === 'KalmanFilter');
+    const ouTrades = trades.filter(t => t.strategy === 'OrnsteinUhlenbeck');
     
-    if (macdTrades.length > 0) {
-      const mWins = macdTrades.filter(t => t.pnlPct > 0).length;
-      console.log(`MACD Trades: ${macdTrades.length} (Win Rate: ${((mWins/macdTrades.length)*100).toFixed(2)}%)`);
+    if (kalmanTrades.length > 0) {
+      const kWins = kalmanTrades.filter(t => t.pnlPct > 0).length;
+      console.log(`Kalman Filter Trades: ${kalmanTrades.length} (Win Rate: ${((kWins/kalmanTrades.length)*100).toFixed(2)}%)`);
     }
-    if (bBandsTrades.length > 0) {
-      const bWins = bBandsTrades.filter(t => t.pnlPct > 0).length;
-      console.log(`BollingerTrades: ${bBandsTrades.length} (Win Rate: ${((bWins/bBandsTrades.length)*100).toFixed(2)}%)`);
-    }
-    if (vwapTrades.length > 0) {
-      const vWins = vwapTrades.filter(t => t.pnlPct > 0).length;
-      console.log(`VWAP Trades: ${vwapTrades.length} (Win Rate: ${((vWins/vwapTrades.length)*100).toFixed(2)}%)`);
+    if (ouTrades.length > 0) {
+      const ouWins = ouTrades.filter(t => t.pnlPct > 0).length;
+      console.log(`Ornstein-Uhlenbeck Trades: ${ouTrades.length} (Win Rate: ${((ouWins/ouTrades.length)*100).toFixed(2)}%)`);
     }
   } else {
     console.log("No trades executed.");

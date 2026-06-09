@@ -56,16 +56,7 @@ async function runChecks({ consensus, symbol, positionDollars, alpacaAccount, op
       passed: !(isCryptoSymbol(symbol) && consensus.direction === 'SHORT'),
       detail: 'Alpaca does not support short selling cryptocurrencies',
     },
-    {
-      name: `AI Confidence ≥ ${MIN_CONFIDENCE}`,
-      passed: Math.abs(consensus.compositeScore) >= MIN_CONFIDENCE,
-      detail: `Score: ${Math.abs(consensus.compositeScore).toFixed(1)}`,
-    },
-    {
-      name: '≥ 1 AI Node Responded',
-      passed: (consensus.nodesUsed?.length ?? 0) >= 1,
-      detail: `Nodes: ${consensus.nodesUsed?.join(', ') ?? 'none'}`,
-    },
+
     {
       name: `Consecutive Losses < ${MAX_CONSEC_LOSS}`,
       passed: consecLoss < MAX_CONSEC_LOSS,

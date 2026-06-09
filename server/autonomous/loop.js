@@ -1,6 +1,5 @@
 require('dotenv').config();
 const { aggregate, isCryptoSymbol } = require('../data/dataAggregator');
-const { runConsensus } = require('../ai/consensus');
 const { execute }      = require('../execution/tradeExecutor');
 const alpacaClient     = require('../execution/alpacaClient');
 const { logDecision }  = require('../db/tradeLogger');
@@ -87,37 +86,19 @@ async function processSymbol(symbol, latestBar) {
   try {
     if (killSwitch.isActive()) return;
 
-    // 1. Aggregate market data + news
+    // 1. Aggregate market data
     const bundle = await aggregate(symbol, latestBar);
     if (!bundle) return;
 
-    // 2. Run Regime Classification Consensus (Gemini + Ollama)
-    const consensus = await runConsensus(bundle);
-
-    // 3. Correlation Check
+    // 2. Correlation Check
     const correlationPass = await checkCorrelation(symbol);
     if (!correlationPass) {
       logger.info('Trade rejected due to high correlation with open positions', { symbol });
       return;
     }
 
-    // 4. Log the AI decision
-    const decisionId = logDecision({
-      symbol,
-      geminiThesis:    consensus.nodeResults?.gemini?.thesis,
-      ollamaSentiment: consensus.nodeResults?.ollama?.sentiment,
-      compositeScore:  consensus.compositeScore,
-      approved:        consensus.approved,
-      direction:       consensus.regime, // Now logs the regime
-      reason:          consensus.reason,
-      nodesUsed:       consensus.nodesUsed,
-    });
-
-    // 5. Execute if approved
-    if (consensus.approved) {
-      // execute will now handle the quantitative execution trigger and ATR risk rails
-      await execute({ bundle, consensus, decisionId });
-    }
+    // 3. Execute purely based on math logic
+    await execute({ bundle });
 
   } catch (err) {
     logger.error('Unhandled error in processSymbol', { symbol, error: err.message });
