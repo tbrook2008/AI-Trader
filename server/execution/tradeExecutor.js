@@ -124,9 +124,6 @@ async function execute({ bundle }) {
   }
 
   // Step 6: Calculate Stops & Targets
-  const trailPrice  = atrValue * ATR_MULTIPLIER;
-  const targetDist  = atrValue * ATR_MULTIPLIER * ATR_TARGET_MULT;
-  const side = direction === 'LONG' ? 'buy' : 'sell';
 
   const atrStop   = direction === 'LONG' ? price - trailPrice : price + trailPrice;
   const atrTarget = direction === 'LONG' ? price + targetDist  : price - targetDist;
