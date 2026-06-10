@@ -97,10 +97,10 @@ async function submitOrder({ symbol, qty, side, stopPrice, takeProfitPrice, trai
   } else {
     orderParams.order_class = 'bracket';
     if (stopPrice) {
-      orderParams.stop_loss = { stop_price: stopPrice.toFixed(2) };
+      orderParams.stop_loss = { stop_price: isCrypto ? stopPrice.toFixed(4) : stopPrice.toFixed(2) };
     }
     if (takeProfitPrice) {
-      orderParams.take_profit = { limit_price: takeProfitPrice.toFixed(2) };
+      orderParams.take_profit = { limit_price: isCrypto ? takeProfitPrice.toFixed(4) : takeProfitPrice.toFixed(2) };
     }
   }
 

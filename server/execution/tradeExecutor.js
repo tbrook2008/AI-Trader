@@ -123,6 +123,14 @@ async function execute({ bundle }) {
     return { executed: false, reason: `Volume: ${volAnalysis.reason}` };
   }
 
+  // Step 6: Calculate Stops & Targets
+  const trailPrice  = atrValue * ATR_MULTIPLIER;
+  const targetDist  = atrValue * ATR_MULTIPLIER * ATR_TARGET_MULT;
+  const side = direction === 'LONG' ? 'buy' : 'sell';
+
+  const atrStop   = direction === 'LONG' ? price - trailPrice : price + trailPrice;
+  const atrTarget = direction === 'LONG' ? price + targetDist  : price - targetDist;
+
   if (DRY_RUN) {
     logger.info('🔍 DRY RUN — no order submitted', {
       symbol, side, qty: sizing.qty, trailPrice: trailPrice.toFixed(2),
@@ -130,25 +138,24 @@ async function execute({ bundle }) {
     return { executed: false, dryRun: true, sizing, validation, reason: 'Dry run mode' };
   }
 
-  // Step 6: Submit Order
+  // Step 7: Execute via Alpaca
   let order;
   try {
     order = await alpaca.submitOrder({
       symbol,
       qty:        sizing.qty,
       side,
-      trailPrice: parseFloat(trailPrice.toFixed(4)),
+      stopPrice:  parseFloat(atrStop.toFixed(4)),
+      takeProfitPrice: parseFloat(atrTarget.toFixed(4))
     });
-    logger.info(`✅ OTO Trailing Stop order submitted: ${symbol} | OrderID: ${order.orderId} | Qty: ${sizing.qty} | Trail: $${trailPrice.toFixed(2)}`);
+    logger.info(`✅ Bracket order submitted: ${symbol} | OrderID: ${order.orderId} | Qty: ${sizing.qty} | Stop: $${atrStop.toFixed(4)}`);
   } catch (err) {
     const errorDetails = err.response ? err.response.data : err.message;
     logger.error('❌ Order submission failed', { symbol, error: err.message, details: errorDetails });
     return { executed: false, reason: `Alpaca Error: ${err.message}` };
   }
 
-  // Step 7: Log trade — store ATR-derived stop/target so riskMonitor can pick them up
-  const atrStop   = direction === 'LONG' ? price - trailPrice : price + trailPrice;
-  const atrTarget = direction === 'LONG' ? price + targetDist  : price - targetDist;
+  // Step 8: Log trade — store ATR-derived stop/target so riskMonitor can pick them up
   const tradeId = logTrade({
     symbol,
     direction,
@@ -161,7 +168,7 @@ async function execute({ bundle }) {
     mode,
   });
 
-  // Step 8: Strategy memory
+  // Step 9: Strategy memory
   memory.saveSetup({
     tradeId,
     symbol,
