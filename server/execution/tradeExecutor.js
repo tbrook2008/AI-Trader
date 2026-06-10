@@ -142,10 +142,8 @@ async function execute({ bundle }) {
       symbol,
       qty:        sizing.qty,
       side,
-      stopPrice:  parseFloat(atrStop.toFixed(4)),
-      takeProfitPrice: parseFloat(atrTarget.toFixed(4))
     });
-    logger.info(`✅ Bracket order submitted: ${symbol} | OrderID: ${order.orderId} | Qty: ${sizing.qty} | Stop: $${atrStop.toFixed(4)}`);
+    logger.info(`✅ Market order submitted: ${symbol} | OrderID: ${order.orderId} | Qty: ${sizing.qty}`);
   } catch (err) {
     const errorDetails = err.response ? err.response.data : err.message;
     logger.error('❌ Order submission failed', { symbol, error: err.message, details: errorDetails });

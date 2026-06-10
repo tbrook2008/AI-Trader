@@ -88,13 +88,14 @@ async function submitOrder({ symbol, qty, side, stopPrice, takeProfitPrice, trai
     time_in_force: isCrypto ? 'gtc' : 'day', // Crypto requires GTC
   };
 
-  orderParams.qty = isCrypto ? qty.toString() : Math.floor(qty).toString();
+  // If Alpaca paper trading allows fractional shares for market orders, we can just use qty.toString()
+  // Since we aren't using bracket orders anymore, fractional shares are perfectly valid.
+  orderParams.qty = qty.toString();
 
-  // If a trailPrice is provided, use an OTO trailing stop, else use standard bracket
   if (trailPrice) {
     orderParams.order_class = 'oto';
     orderParams.stop_loss = { trail_price: isCrypto ? trailPrice.toFixed(4) : trailPrice.toFixed(2) };
-  } else {
+  } else if (stopPrice || takeProfitPrice) {
     orderParams.order_class = 'bracket';
     if (stopPrice) {
       orderParams.stop_loss = { stop_price: isCrypto ? stopPrice.toFixed(4) : stopPrice.toFixed(2) };
