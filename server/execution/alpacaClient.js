@@ -93,7 +93,7 @@ async function submitOrder({ symbol, qty, side, stopPrice, takeProfitPrice, trai
   // If a trailPrice is provided, use an OTO trailing stop, else use standard bracket
   if (trailPrice) {
     orderParams.order_class = 'oto';
-    orderParams.stop_loss = { trail_price: trailPrice.toFixed(2) };
+    orderParams.stop_loss = { trail_price: isCrypto ? trailPrice.toFixed(4) : trailPrice.toFixed(2) };
   } else {
     orderParams.order_class = 'bracket';
     if (stopPrice) {
