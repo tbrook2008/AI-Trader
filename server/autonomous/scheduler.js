@@ -1,6 +1,6 @@
 require('dotenv').config();
 const { startStream } = require('./loop');
-const { monitorCryptoRisk } = require('./riskMonitor');
+const { monitorRisk } = require('./riskMonitor');
 const { initDb }  = require('../db/schema');
 const logger      = require('../utils/logger');
 
@@ -18,7 +18,7 @@ async function start() {
   // 1-Minute Crypto Risk Monitor via simple interval instead of cron
   setInterval(async () => {
     try {
-      await monitorCryptoRisk();
+      await monitorRisk();
     } catch (err) {
       logger.error('Risk Monitor cycle error', { error: err.message });
     }

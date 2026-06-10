@@ -4,11 +4,11 @@ const { isCryptoSymbol } = require('../data/dataAggregator');
 const logger = require('../utils/logger');
 
 /**
- * Periodically checks open crypto positions against local DB stop-loss and take-profit limits.
- * Required because Alpaca does not support OCO/Bracket orders natively for crypto.
+ * Periodically checks ALL open positions against local DB stop-loss and take-profit limits.
+ * Required because we removed Alpaca OCO/Bracket orders to avoid integer/distance constraints.
  */
-async function monitorCryptoRisk() {
-  logger.info('🛡️ Running crypto risk monitor...');
+async function monitorRisk() {
+  logger.info('🛡️ Running risk monitor for all positions...');
   
   let positions;
   try {
@@ -18,9 +18,7 @@ async function monitorCryptoRisk() {
     return;
   }
 
-  const cryptoPositions = positions.filter(p => isCryptoSymbol(p.symbol));
-
-  for (const pos of cryptoPositions) {
+  for (const pos of positions) {
     let symbol = pos.symbol;
     // Map Alpaca format 'DOGEUSD' → internal 'DOGE/USD' using regex
     if (/^[A-Z]+USD$/.test(symbol) && symbol !== 'USD') {
@@ -120,4 +118,4 @@ async function monitorCryptoRisk() {
   }
 }
 
-module.exports = { monitorCryptoRisk };
+module.exports = { monitorRisk };
