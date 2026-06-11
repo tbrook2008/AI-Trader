@@ -20,6 +20,8 @@ async function monitorRisk() {
     return;
   }
 
+  const closePromises = [];
+
   for (const pos of positions) {
     let symbol = pos.symbol;
     // Map Alpaca format 'DOGEUSD' → internal 'DOGE/USD' using regex
@@ -61,7 +63,7 @@ async function monitorRisk() {
     }
 
     // Implement Trailing Stop Logic with Dynamic ATR
-    let trailDistance = Math.abs(pos.avgEntry - stopLoss); // fallback to static distance
+    let trailDistance = null; // Default to null to prevent distortion if history is missing
     const baseMultiplier = parseFloat(process.env.ATR_MULTIPLIER || '3.5');
     
     // Attempt to recalculate dynamically using recent history
@@ -75,7 +77,7 @@ async function monitorRisk() {
       }
     }
 
-    if (direction === 'LONG') {
+    if (trailDistance !== null && direction === 'LONG') {
       const newTrailingStop = currentPrice - trailDistance;
       if (newTrailingStop > stopLoss) {
         stopLoss = newTrailingStop;
@@ -84,7 +86,7 @@ async function monitorRisk() {
           updateTradeStopLoss(tradeId, stopLoss);
         }
       }
-    } else if (direction === 'SHORT') {
+    } else if (trailDistance !== null && direction === 'SHORT') {
       const newTrailingStop = currentPrice + trailDistance;
       if (newTrailingStop < stopLoss) {
         stopLoss = newTrailingStop;
@@ -110,23 +112,29 @@ async function monitorRisk() {
         symbol, currentPrice, stopLoss, targetPrice 
       });
 
-      // Pass the raw Alpaca symbol (pos.symbol) to closePosition, NOT the DB format
-      const res = await alpaca.closePosition(pos.symbol);
-      if (res.closed) {
-        const pnl = pos.unrealizedPL;
-        if (tradeId) {
-          updateTradeOutcome({
-            tradeId: tradeId,
-            exitPrice: currentPrice,
-            pnl,
-            status: 'closed'
-          });
+      closePromises.push((async () => {
+        // Pass the raw Alpaca symbol (pos.symbol) to closePosition, NOT the DB format
+        const res = await alpaca.closePosition(pos.symbol);
+        if (res.closed) {
+          const pnl = pos.unrealizedPL;
+          if (tradeId) {
+            updateTradeOutcome({
+              tradeId: tradeId,
+              exitPrice: currentPrice,
+              pnl,
+              status: 'closed'
+            });
+          }
+          logger.info(`✅ Closed position successfully`, { symbol, pnl });
+        } else {
+          logger.error(`❌ Failed to close position during risk event`, { symbol, reason: res.reason });
         }
-        logger.info(`✅ Closed position successfully`, { symbol, pnl });
-      } else {
-        logger.error(`❌ Failed to close position during risk event`, { symbol, reason: res.reason });
-      }
+      })());
     }
+  }
+
+  if (closePromises.length > 0) {
+    await Promise.allSettled(closePromises);
   }
 }
 

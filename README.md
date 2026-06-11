@@ -145,6 +145,23 @@ Or double-click the **AI Trader Dashboard** shortcut on your Desktop.
 
 ---
 
+## Backtesting Engine
+
+To optimize parameters and verify profitability, the system includes a fully integrated backtester that runs historical 1-minute candle data through the exact same quantitative logic (HMM, Kalman, OU) as live trading.
+
+**Features of the Backtester (`server/backtest.js`):**
+- **Exact Match Logic**: It directly requires `tradeExecutor.js` to ensure the simulated trades use the exact same code that runs in production.
+- **Side-Effect Mocking**: It intercepts and mocks DB writes (`logTrade`), API calls, and validation rules to run blazing fast without hitting rate limits or corrupting your DB.
+- **Dynamic Sizing & Risk**: It utilizes the real Kelly Criterion sizing logic against a simulated $100k account and respects your dynamic ATR multipliers.
+- **PnL Tracking**: Calculates accurate dollar PnL based on fractional quantities and tracks your win rate out of total trades.
+
+**How to run it:**
+```bash
+node server/backtest.js
+```
+
+---
+
 ## Key Configuration (`.env`)
 
 ```env
