@@ -30,4 +30,30 @@ function calculateATR(history, period = 14) {
   return atr;
 }
 
-module.exports = { calculateATR };
+function getDynamicATRMultiplier(history, baseMultiplier) {
+  if (!history || history.length < 10) return baseMultiplier;
+  
+  // Calculate percentage returns
+  const returns = [];
+  for (let i = 1; i < history.length; i++) {
+    returns.push((history[i].close - history[i-1].close) / history[i-1].close);
+  }
+  
+  const mean = returns.reduce((sum, val) => sum + val, 0) / returns.length;
+  const variance = returns.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / returns.length;
+  const stdDev = Math.sqrt(variance);
+  
+  // Assume baseline volatility of ~0.005 (0.5% per minute/period)
+  // Might be smaller, let's say 0.002
+  const baselineVol = 0.002;
+  
+  // Ratio of current vol to baseline vol
+  let volRatio = stdDev / baselineVol;
+  
+  // Cap the ratio between 0.5 (half base multiplier) and 2.0 (double base multiplier)
+  volRatio = Math.max(0.5, Math.min(volRatio, 2.0));
+  
+  return baseMultiplier * volRatio;
+}
+
+module.exports = { calculateATR, getDynamicATRMultiplier };

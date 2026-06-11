@@ -15,7 +15,7 @@ const macd = require('../quantitative/macd');
 const bollingerRsi = require('../quantitative/bollingerRsi');
 const kalman = require('../quantitative/kalman');
 const ouModel = require('../quantitative/ouModel');
-const { calculateATR } = require('../quantitative/atr');
+const { calculateATR, getDynamicATRMultiplier } = require('../quantitative/atr');
 const { analyzeVolume, classifyVolume } = require('../quantitative/volumeProfile');
 const hmm = require('../quantitative/hmm');
 const vwap = require('../quantitative/vwap');
@@ -110,8 +110,9 @@ async function execute({ bundle }) {
     return { executed: false, reason: 'Insufficient ATR data' };
   }
 
-  const trailPrice  = atrValue * ATR_MULTIPLIER;
-  const targetDist  = atrValue * ATR_MULTIPLIER * ATR_TARGET_MULT;
+  const dynamicMultiplier = getDynamicATRMultiplier(bundle.history, ATR_MULTIPLIER);
+  const trailPrice  = atrValue * dynamicMultiplier;
+  const targetDist  = atrValue * dynamicMultiplier * ATR_TARGET_MULT;
   const side = direction === 'LONG' ? 'buy' : 'sell';
 
   // Step 5b: Volume Profile check

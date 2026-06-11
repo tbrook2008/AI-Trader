@@ -2,6 +2,8 @@ const alpaca = require('../execution/alpacaClient');
 const { getOpenTradeBySymbol, updateTradeOutcome, logTrade, updateTradeStopLoss } = require('../db/tradeLogger');
 const { isCryptoSymbol } = require('../data/dataAggregator');
 const logger = require('../utils/logger');
+const { barsHistory } = require('../data/dataAggregator');
+const { calculateATR, getDynamicATRMultiplier } = require('../quantitative/atr');
 
 /**
  * Periodically checks ALL open positions against local DB stop-loss and take-profit limits.
@@ -58,10 +60,20 @@ async function monitorRisk() {
       }
     }
 
-    // Implement Trailing Stop Logic
-    const ATR_MULTIPLIER = parseFloat(process.env.ATR_MULTIPLIER || '3.5');
-    // Calculate the trailing distance (distance from entry to original stop)
-    const trailDistance = Math.abs(pos.avgEntry - stopLoss);
+    // Implement Trailing Stop Logic with Dynamic ATR
+    let trailDistance = Math.abs(pos.avgEntry - stopLoss); // fallback to static distance
+    const baseMultiplier = parseFloat(process.env.ATR_MULTIPLIER || '3.5');
+    
+    // Attempt to recalculate dynamically using recent history
+    const history = barsHistory[symbol];
+    if (history && history.length >= 14) {
+      const atrValue = calculateATR(history, 14);
+      if (atrValue) {
+        const dynamicMultiplier = getDynamicATRMultiplier(history, baseMultiplier);
+        trailDistance = atrValue * dynamicMultiplier;
+        logger.debug(`Dynamic Trail Distance for ${symbol}: $${trailDistance.toFixed(4)} (Mult: ${dynamicMultiplier.toFixed(2)})`);
+      }
+    }
 
     if (direction === 'LONG') {
       const newTrailingStop = currentPrice - trailDistance;

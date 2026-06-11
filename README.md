@@ -31,7 +31,7 @@ Alpaca WebSocket Quote Stream
         → volumeProfile.analyzeVolume() → blocks dead-volume entries
         → kellyCriterion.getPositionSize() → fractional Kelly sizing
         → validator.runChecks() → 12-point pre-trade safety gate
-        → calculateATR() → dynamic stop/target (3.5x ATR stop, 7.0x ATR target)
+        → calculateATR() & getDynamicATRMultiplier() → volatility-adjusted dynamic stop/target (base 3.5x ATR stop, dynamically scaled by recent return std-dev)
         → alpacaClient.submitOrder() → market order on Alpaca
         → tradeLogger.logTrade() → HMAC-chained SQLite record
     → riskMonitor (every 60s): software stop-loss/take-profit for open crypto positions
@@ -163,8 +163,8 @@ APPROVAL_THRESHOLD=62                # Two-node threshold (raised from 45 → 62
 SINGLE_NODE_THRESHOLD=72             # Ollama-only threshold when Gemini is circuit-broken
 GEMINI_CIRCUIT_BREAK_MS=3600000     # Pause Gemini for 1hr after 429 (default)
 
-# --- ATR Risk Rails ---
-ATR_MULTIPLIER=3.5                   # Stop = 3.5x ATR from entry (raised from 2.0)
+# --- ATR Risk Rails (Dynamic) ---
+ATR_MULTIPLIER=3.5                   # Base Stop = 3.5x ATR. Dynamically scales based on recent market volatility.
 ATR_TARGET_MULTIPLIER=2.0            # Target = 2x stop distance (1:2 R:R)
 TREND_FILTER_PERIOD=50               # SMA period for trend direction filter
 
@@ -184,7 +184,7 @@ KELLY_FRACTION_DIVISOR=4
 
 | Rule | Value | Notes |
 |------|-------|-------|
-| Stop distance | ATR × 3.5 | ~0.28–0.45% for BTC on 1-min bars |
+| Stop distance | Dynamic ATR × Base(3.5) | Base multiplier dynamically scales (0.5x to 2.0x) based on current volatility |
 | Target distance | Stop × 2.0 | 1:2 risk/reward |
 | Max position size | 6% of portfolio | Reduced from 15% after May 5 analysis |
 | Post-loss cooldown | 45 min × (losses+1) | 1 loss = 90 min, 2 = 135 min |
