@@ -62,9 +62,9 @@ function analyzeVolume(history, direction) {
     return { supported: true, reason: 'volume_exhaustion_short', ratio };
   }
 
-  // Absolute minimum: don't trade if volume is less than 20% of normal
-  if (ratio < 0.20) {
-    return { supported: false, reason: 'dead_volume', ratio };
+  // Absolute minimum: don't trade if volume is less than 1.5x of normal
+  if (ratio < 1.5) {
+    return { supported: false, reason: 'insufficient_momentum', ratio };
   }
 
   return { supported: true, reason: 'ok', ratio };

@@ -182,7 +182,7 @@ GEMINI_CIRCUIT_BREAK_MS=3600000     # Pause Gemini for 1hr after 429 (default)
 
 # --- ATR Risk Rails (Dynamic) ---
 ATR_MULTIPLIER=3.5                   # Base Stop = 3.5x ATR. Dynamically scales based on recent market volatility.
-ATR_TARGET_MULTIPLIER=2.0            # Target = 2x stop distance (1:2 R:R)
+TREND_FILTER_PERIOD=50               # SMA period for trend direction filter
 TREND_FILTER_PERIOD=50               # SMA period for trend direction filter
 
 # --- Risk Management ---
@@ -202,7 +202,7 @@ KELLY_FRACTION_DIVISOR=4
 | Rule | Value | Notes |
 |------|-------|-------|
 | Stop distance | Dynamic ATR × Base(3.5) | Base multiplier dynamically scales (0.5x to 2.0x) based on current volatility |
-| Target distance | Stop × 2.0 | 1:2 risk/reward |
+| Target distance | Dynamic based on Regime | 2.0x Stop for Momentum, 1.0x Stop for Mean-Reversion |
 | Max position size | 6% of portfolio | Reduced from 15% after May 5 analysis |
 | Post-loss cooldown | 45 min × (losses+1) | 1 loss = 90 min, 2 = 135 min |
 | Daily loss limit | 3% of account | Triggers kill switch for rest of day |

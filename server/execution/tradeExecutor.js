@@ -22,7 +22,6 @@ const vwap = require('../quantitative/vwap');
 
 const DRY_RUN            = process.env.DRY_RUN === 'true';
 const ATR_MULTIPLIER     = parseFloat(process.env.ATR_MULTIPLIER        || '3.5');
-const ATR_TARGET_MULT    = parseFloat(process.env.ATR_TARGET_MULTIPLIER || '2.0');
 
 /**
  * Full trade execution pipeline based purely on math.
@@ -52,6 +51,18 @@ async function execute({ bundle }) {
 
   if (direction === 'NO_TRADE') {
     return { executed: false, reason: 'Quantitative trigger condition not met' };
+  }
+
+  if (isTrending && history && history.length > 0) {
+    const period = Math.min(50, history.length);
+    const recent = history.slice(-period);
+    const sma = recent.reduce((sum, b) => sum + b.close, 0) / period;
+    if (direction === 'LONG' && price < sma) {
+      return { executed: false, reason: 'Macro trend alignment failed (price below SMA)' };
+    }
+    if (direction === 'SHORT' && price > sma) {
+      return { executed: false, reason: 'Macro trend alignment failed (price above SMA)' };
+    }
   }
 
   logger.info('Trade executor started', {
@@ -112,7 +123,8 @@ async function execute({ bundle }) {
 
   const dynamicMultiplier = getDynamicATRMultiplier(bundle.history, ATR_MULTIPLIER);
   const trailPrice  = atrValue * dynamicMultiplier;
-  const targetDist  = atrValue * dynamicMultiplier * ATR_TARGET_MULT;
+  const dynamicRR = isTrending ? 2.0 : 1.0;
+  const targetDist  = atrValue * dynamicMultiplier * dynamicRR;
   const side = direction === 'LONG' ? 'buy' : 'sell';
 
   // Step 5b: Volume Profile check
@@ -184,6 +196,8 @@ async function execute({ bundle }) {
     qty:             sizing.qty,
     entryPrice:      price,
     trailPrice:      parseFloat(trailPrice.toFixed(2)),
+    targetDist:      parseFloat(targetDist.toFixed(2)),
+    targetPrice:     parseFloat(atrTarget.toFixed(4)),
     positionDollars: sizing.positionDollars,
   };
 }

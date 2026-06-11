@@ -33,7 +33,7 @@ process.env.DRY_RUN = 'false';
 const tradeExecutor = require('./execution/tradeExecutor');
 
 // Config
-const SYMBOLS = ['AAPL', 'SPY', 'BTC/USD'];
+const SYMBOLS = ['AAPL', 'SPY', 'BTC/USD', 'ETH/USD', 'SOL/USD', 'QQQ', 'MSFT', 'TSLA', 'NVDA', 'DOGE/USD', 'AVAX/USD'];
 const HISTORY_LIMIT = 1500;
 const DAYS_TO_FETCH = 5;
 
@@ -156,23 +156,11 @@ async function runBacktest() {
       const result = await tradeExecutor.execute({ bundle });
       
       if (result && result.executed) {
-        // Calculate the actual stop loss and take profit
-        const price = result.entryPrice;
-        // In tradeExecutor, targetDist is twice the trailPrice (since ATR_TARGET_MULT = 2.0)
-        // Wait, tradeExecutor doesn't return stopLoss/takeProfit directly, but returns trailPrice
-        // Let's compute them similarly. We can read them from result if we modify tradeExecutor, 
-        // but since we shouldn't modify it, we can calculate based on trailPrice.
-        const trailPrice = result.trailPrice;
-        const targetDist = trailPrice * (parseFloat(process.env.ATR_TARGET_MULTIPLIER) || 2.0);
-
-        const stopLoss = result.direction === 'LONG' ? price - trailPrice : price + trailPrice;
-        const takeProfit = result.direction === 'LONG' ? price + targetDist : price - targetDist;
-
         openPosition = {
           direction: result.direction,
-          entryPrice: price,
-          stopLoss,
-          takeProfit,
+          entryPrice: result.entryPrice,
+          stopLoss: result.direction === 'LONG' ? result.entryPrice - result.trailPrice : result.entryPrice + result.trailPrice,
+          takeProfit: result.targetPrice,
           qty: result.qty || 1,
           timestamp: bar.timestamp
         };
@@ -188,6 +176,16 @@ async function runBacktest() {
   }
 }
 
-// We do not call runBacktest() directly per user instructions:
-// "DO NOT run the simulation yet. Just implement the code and ensure there are no syntax errors."
+// Export for testing
 module.exports = { runBacktest };
+
+// Execute if run directly
+if (require.main === module) {
+  runBacktest().then(() => {
+    console.log("Backtest completed.");
+    process.exit(0);
+  }).catch(err => {
+    console.error(err);
+    process.exit(1);
+  });
+}

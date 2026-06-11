@@ -94,7 +94,7 @@ function evaluate(history) {
   const zScore = (lastPrice - mu) / sigmaEq;
 
   // Signal LONG if price is heavily discounted (oversold) and expected to revert up
-  if (zScore < -2.0) {
+  if (zScore < -2.5) {
     // Confirm bar closed green (starting to revert)
     const lastBar = history[history.length - 1];
     if (lastBar.close > lastBar.open) {
@@ -103,7 +103,7 @@ function evaluate(history) {
   }
 
   // Signal SHORT if price is heavily overbought
-  if (zScore > 2.0) {
+  if (zScore > 2.5) {
     const lastBar = history[history.length - 1];
     if (lastBar.close < lastBar.open) {
       return 'SHORT';

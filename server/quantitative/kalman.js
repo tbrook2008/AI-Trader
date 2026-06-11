@@ -109,7 +109,7 @@ function evaluate(history) {
   const avgVelMag = velocities.slice(-20).reduce((a, b) => a + Math.abs(b), 0) / 20;
 
   // Signal generation based on velocity acceleration and magnitude
-  if (currentVelocity > prevVelocity && currentVelocity > avgVelMag * 1.5) {
+  if (currentVelocity > prevVelocity && currentVelocity > avgVelMag * 3.0) {
     // Confirm with volume
     const volumes = history.map(b => b.volume);
     const avgVol = volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
@@ -118,7 +118,7 @@ function evaluate(history) {
     }
   }
 
-  if (currentVelocity < prevVelocity && currentVelocity < -avgVelMag * 1.5) {
+  if (currentVelocity < prevVelocity && currentVelocity < -avgVelMag * 3.0) {
     const volumes = history.map(b => b.volume);
     const avgVol = volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
     if (volumes[last] > avgVol * 1.2) {
