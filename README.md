@@ -183,7 +183,6 @@ GEMINI_CIRCUIT_BREAK_MS=3600000     # Pause Gemini for 1hr after 429 (default)
 # --- ATR Risk Rails (Dynamic) ---
 ATR_MULTIPLIER=3.5                   # Base Stop = 3.5x ATR. Dynamically scales based on recent market volatility.
 TREND_FILTER_PERIOD=50               # SMA period for trend direction filter
-TREND_FILTER_PERIOD=50               # SMA period for trend direction filter
 
 # --- Risk Management ---
 TRADING_MODE=paper                   # paper or live — always start with paper
