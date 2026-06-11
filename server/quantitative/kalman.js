@@ -3,6 +3,20 @@
  * Dynamic State-Space Model using a 1D Kalman Filter.
  * Estimates the "true" underlying price and its velocity (trend) by filtering out market noise.
  */
+const fs = require('fs');
+const path = require('path');
+let symbolParamsCache = null;
+function getSymbolParams(symbol) {
+  if (global.OPTIMIZE_PARAMS) return global.OPTIMIZE_PARAMS;
+  if (!symbolParamsCache) {
+    try {
+      const p = path.join(__dirname, '../data/symbolParams.json');
+      if (fs.existsSync(p)) symbolParamsCache = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      else symbolParamsCache = {};
+    } catch (e) { symbolParamsCache = {}; }
+  }
+  return symbolParamsCache[symbol] || {};
+}
 
 class KalmanFilter {
   constructor(R = 0.01, Q_pos = 0.0001, Q_vel = 0.0001) {
@@ -80,8 +94,11 @@ class KalmanFilter {
  * @param {Array} history - OHLCV bars
  * @returns {string} 'LONG' | 'SHORT' | 'NO_TRADE'
  */
-function evaluate(history) {
+function evaluate(history, symbol) {
   if (!history || history.length < 50) return 'NO_TRADE';
+
+  const params = getSymbolParams(symbol);
+  const kalmanThreshold = params.kalmanThreshold || 3.0;
 
   // We tune R based on recent volatility to make the filter adaptive
   const closes = history.map(b => b.close);
@@ -109,7 +126,7 @@ function evaluate(history) {
   const avgVelMag = velocities.slice(-20).reduce((a, b) => a + Math.abs(b), 0) / 20;
 
   // Signal generation based on velocity acceleration and magnitude
-  if (currentVelocity > prevVelocity && currentVelocity > avgVelMag * 3.0) {
+  if (currentVelocity > prevVelocity && currentVelocity > avgVelMag * kalmanThreshold) {
     // Confirm with volume
     const volumes = history.map(b => b.volume);
     const avgVol = volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
@@ -118,7 +135,7 @@ function evaluate(history) {
     }
   }
 
-  if (currentVelocity < prevVelocity && currentVelocity < -avgVelMag * 3.0) {
+  if (currentVelocity < prevVelocity && currentVelocity < -avgVelMag * kalmanThreshold) {
     const volumes = history.map(b => b.volume);
     const avgVol = volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
     if (volumes[last] > avgVol * 1.2) {

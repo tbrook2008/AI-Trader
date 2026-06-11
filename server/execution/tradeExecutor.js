@@ -10,6 +10,21 @@ const { logTrade }  = require('../db/tradeLogger');
 const memory        = require('../db/strategyMemory');
 const { setState }  = require('../db/schema');
 const logger        = require('../utils/logger');
+const fs = require('fs');
+const path = require('path');
+
+let symbolParamsCache = null;
+function getSymbolParams(symbol) {
+  if (global.OPTIMIZE_PARAMS) return global.OPTIMIZE_PARAMS;
+  if (!symbolParamsCache) {
+    try {
+      const p = path.join(__dirname, '../data/symbolParams.json');
+      if (fs.existsSync(p)) symbolParamsCache = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      else symbolParamsCache = {};
+    } catch (e) { symbolParamsCache = {}; }
+  }
+  return symbolParamsCache[symbol] || {};
+}
 
 const macd = require('../quantitative/macd');
 const bollingerRsi = require('../quantitative/bollingerRsi');
@@ -42,10 +57,10 @@ async function execute({ bundle }) {
   let strategy = '';
 
   if (isTrending) {
-    direction = kalman.evaluate(history);
+    direction = kalman.evaluate(history, symbol);
     if (direction !== 'NO_TRADE') strategy = 'KalmanFilter';
   } else {
-    direction = ouModel.evaluate(history);
+    direction = ouModel.evaluate(history, symbol);
     if (direction !== 'NO_TRADE') strategy = 'OrnsteinUhlenbeck';
   }
 
@@ -54,7 +69,9 @@ async function execute({ bundle }) {
   }
 
   if (isTrending && history && history.length > 0) {
-    const period = Math.min(50, history.length);
+    const params = getSymbolParams(symbol);
+    const trendPeriod = params.trendPeriod || 50;
+    const period = Math.min(trendPeriod, history.length);
     const recent = history.slice(-period);
     const sma = recent.reduce((sum, b) => sum + b.close, 0) / period;
     if (direction === 'LONG' && price < sma) {
@@ -123,12 +140,13 @@ async function execute({ bundle }) {
 
   const dynamicMultiplier = getDynamicATRMultiplier(bundle.history, ATR_MULTIPLIER);
   const trailPrice  = atrValue * dynamicMultiplier;
-  const dynamicRR = isTrending ? 2.0 : 1.0;
+  const params = getSymbolParams(symbol);
+  const dynamicRR = isTrending ? (params.dynamicRR_Trending || 2.0) : (params.dynamicRR_MeanRev || 1.0);
   const targetDist  = atrValue * dynamicMultiplier * dynamicRR;
   const side = direction === 'LONG' ? 'buy' : 'sell';
 
   // Step 5b: Volume Profile check
-  const volAnalysis = analyzeVolume(bundle.history, direction);
+  const volAnalysis = analyzeVolume(bundle.history, direction, symbol);
   const volClass    = classifyVolume(bundle.history);
   logger.info('Volume profile', { symbol, volume: volClass, ratio: volAnalysis.ratio?.toFixed(2), reason: volAnalysis.reason });
   if (!volAnalysis.supported) {

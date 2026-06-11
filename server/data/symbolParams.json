@@ -1,0 +1,66 @@
+{
+  "AAPL": {
+    "minVolumeRatio": 1,
+    "zScoreThreshold": 2,
+    "kalmanThreshold": 1.5,
+    "trendPeriod": 100,
+    "dynamicRR_Trending": 1,
+    "dynamicRR_MeanRev": 1.5
+  },
+  "SPY": {
+    "minVolumeRatio": 2,
+    "zScoreThreshold": 2,
+    "kalmanThreshold": 3,
+    "trendPeriod": 20,
+    "dynamicRR_Trending": 1,
+    "dynamicRR_MeanRev": 1
+  },
+  "BTC/USD": {
+    "minVolumeRatio": 1,
+    "zScoreThreshold": 3,
+    "kalmanThreshold": 3,
+    "trendPeriod": 20,
+    "dynamicRR_Trending": 1,
+    "dynamicRR_MeanRev": 1.5
+  },
+  "SOL/USD": {
+    "minVolumeRatio": 1,
+    "zScoreThreshold": 2,
+    "kalmanThreshold": 3,
+    "trendPeriod": 20,
+    "dynamicRR_Trending": 1,
+    "dynamicRR_MeanRev": 1
+  },
+  "MSFT": {
+    "minVolumeRatio": 1.5,
+    "zScoreThreshold": 2,
+    "kalmanThreshold": 3,
+    "trendPeriod": 20,
+    "dynamicRR_Trending": 1,
+    "dynamicRR_MeanRev": 1
+  },
+  "TSLA": {
+    "minVolumeRatio": 2,
+    "zScoreThreshold": 2,
+    "kalmanThreshold": 3,
+    "trendPeriod": 20,
+    "dynamicRR_Trending": 1,
+    "dynamicRR_MeanRev": 1
+  },
+  "NVDA": {
+    "minVolumeRatio": 2,
+    "zScoreThreshold": 3,
+    "kalmanThreshold": 3,
+    "trendPeriod": 20,
+    "dynamicRR_Trending": 1,
+    "dynamicRR_MeanRev": 1
+  },
+  "DOGE/USD": {
+    "minVolumeRatio": 2,
+    "zScoreThreshold": 2.5,
+    "kalmanThreshold": 1.5,
+    "trendPeriod": 20,
+    "dynamicRR_Trending": 1,
+    "dynamicRR_MeanRev": 1
+  }
+}

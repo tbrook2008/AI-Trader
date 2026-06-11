@@ -10,6 +10,21 @@
  * is a warning sign that the move lacks conviction.
  */
 
+const fs = require('fs');
+const path = require('path');
+let symbolParamsCache = null;
+function getSymbolParams(symbol) {
+  if (global.OPTIMIZE_PARAMS) return global.OPTIMIZE_PARAMS;
+  if (!symbolParamsCache) {
+    try {
+      const p = path.join(__dirname, '../data/symbolParams.json');
+      if (fs.existsSync(p)) symbolParamsCache = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      else symbolParamsCache = {};
+    } catch (e) { symbolParamsCache = {}; }
+  }
+  return symbolParamsCache[symbol] || {};
+}
+
 /**
  * Compute a rolling volume average.
  */
@@ -25,10 +40,13 @@ function rollingAvg(volumes, period) {
  * @param {string} direction - 'LONG' | 'SHORT'
  * @returns {{ supported: boolean, reason: string, ratio: number }}
  */
-function analyzeVolume(history, direction) {
+function analyzeVolume(history, direction, symbol) {
   if (!history || history.length < 20) {
     return { supported: true, reason: 'insufficient_history', ratio: 1 };
   }
+
+  const params = getSymbolParams(symbol);
+  const minVolumeRatio = params.minVolumeRatio || 1.5;
 
   const volumes  = history.map(b => b.volume);
   const closes   = history.map(b => b.close);
@@ -63,7 +81,7 @@ function analyzeVolume(history, direction) {
   }
 
   // Absolute minimum: don't trade if volume is less than 1.5x of normal
-  if (ratio < 1.5) {
+  if (ratio < minVolumeRatio) {
     return { supported: false, reason: 'insufficient_momentum', ratio };
   }
 

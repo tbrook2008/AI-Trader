@@ -3,6 +3,20 @@
  * Ornstein-Uhlenbeck (OU) Process for Mean Reversion.
  * Models the spread/price predicting when it will return to its historical average.
  */
+const fs = require('fs');
+const path = require('path');
+let symbolParamsCache = null;
+function getSymbolParams(symbol) {
+  if (global.OPTIMIZE_PARAMS) return global.OPTIMIZE_PARAMS;
+  if (!symbolParamsCache) {
+    try {
+      const p = path.join(__dirname, '../data/symbolParams.json');
+      if (fs.existsSync(p)) symbolParamsCache = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      else symbolParamsCache = {};
+    } catch (e) { symbolParamsCache = {}; }
+  }
+  return symbolParamsCache[symbol] || {};
+}
 
 function linearRegression(x, y) {
   const n = x.length;
@@ -73,8 +87,11 @@ function calibrateOU(prices) {
  * @param {Array} history - OHLCV bars
  * @returns {string} 'LONG' | 'SHORT' | 'NO_TRADE'
  */
-function evaluate(history) {
+function evaluate(history, symbol) {
   if (!history || history.length < 100) return 'NO_TRADE';
+
+  const symbolParams = getSymbolParams(symbol);
+  const zScoreThreshold = symbolParams.zScoreThreshold || 2.5;
 
   const closes = history.map(b => b.close);
   // Calibrate on the last 100 bars to capture the current local regime
@@ -94,7 +111,7 @@ function evaluate(history) {
   const zScore = (lastPrice - mu) / sigmaEq;
 
   // Signal LONG if price is heavily discounted (oversold) and expected to revert up
-  if (zScore < -2.5) {
+  if (zScore < -zScoreThreshold) {
     // Confirm bar closed green (starting to revert)
     const lastBar = history[history.length - 1];
     if (lastBar.close > lastBar.open) {
@@ -103,7 +120,7 @@ function evaluate(history) {
   }
 
   // Signal SHORT if price is heavily overbought
-  if (zScore > 2.5) {
+  if (zScore > zScoreThreshold) {
     const lastBar = history[history.length - 1];
     if (lastBar.close < lastBar.open) {
       return 'SHORT';
