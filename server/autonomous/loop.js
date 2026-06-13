@@ -23,23 +23,29 @@ function startStream() {
   stockStream.onConnect(() => {
     logger.info('Connected to Alpaca Stock WebSocket');
     const stocks = SYMBOLS.filter(s => !isCryptoSymbol(s));
-    if (stocks.length > 0) stockStream.subscribeForQuotes(stocks);
+    if (stocks.length > 0) stockStream.subscribeForBars(stocks);
   });
 
-  stockStream.onStockQuote(quote => {
-    const midPrice = (quote.BidPrice + quote.AskPrice) / 2;
-    handleTick(quote.Symbol || quote.S, midPrice, quote.BidSize + quote.AskSize, new Date(quote.Timestamp));
+  stockStream.onStockBar(async bar => {
+    logger.info(`Received 1-min stock bar for ${bar.Symbol}`, { close: bar.ClosePrice, volume: bar.Volume });
+    const formattedBar = {
+      open: bar.OpenPrice, high: bar.HighPrice, low: bar.LowPrice, close: bar.ClosePrice, volume: bar.Volume
+    };
+    await processSymbol(bar.Symbol, formattedBar);
   });
   
   cryptoStream.onConnect(() => {
     logger.info('Connected to Alpaca Crypto WebSocket');
     const cryptos = SYMBOLS.filter(s => isCryptoSymbol(s));
-    if (cryptos.length > 0) cryptoStream.subscribeForQuotes(cryptos);
+    if (cryptos.length > 0) cryptoStream.subscribeForBars(cryptos);
   });
 
-  cryptoStream.onCryptoQuote(quote => {
-    const midPrice = (quote.BidPrice + quote.AskPrice) / 2;
-    handleTick(quote.S, midPrice, quote.BidSize + quote.AskSize, new Date(quote.Timestamp));
+  cryptoStream.onCryptoBar(async bar => {
+    logger.info(`Received 1-min crypto bar for ${bar.Symbol}`, { close: bar.ClosePrice, volume: bar.Volume });
+    const formattedBar = {
+      open: bar.OpenPrice, high: bar.HighPrice, low: bar.LowPrice, close: bar.ClosePrice, volume: bar.Volume
+    };
+    await processSymbol(bar.Symbol, formattedBar);
   });
 
   cryptoStream.onError(err => logger.error('Alpaca Crypto WS Error', { error: err.message || err }));
@@ -47,39 +53,6 @@ function startStream() {
 
   stockStream.connect();
   cryptoStream.connect();
-  
-  // To handle minute bar closures deterministically, we can use an interval 
-  // that flushes the buffer at the top of every minute.
-  setInterval(flushBars, 60000);
-}
-
-async function handleTick(symbol, price, size, timestamp) {
-  if (!tickBuffer[symbol]) {
-    tickBuffer[symbol] = {
-      open: price, high: price, low: price, close: price, volume: size,
-      minute: timestamp.getMinutes()
-    };
-  } else {
-    const b = tickBuffer[symbol];
-    b.high = Math.max(b.high, price);
-    b.low = Math.min(b.low, price);
-    b.close = price;
-    b.volume += size;
-  }
-}
-
-async function flushBars() {
-  const snapshot = { ...tickBuffer };     // snapshot before clearing
-  for (const symbol of Object.keys(snapshot)) {
-    delete tickBuffer[symbol];            // clear buffer entry
-    const bar = snapshot[symbol];
-    if (!bar || typeof bar.close !== 'number') {
-      logger.warn(`flushBars: invalid bar for ${symbol}, skipping`, { bar });
-      continue;
-    }
-    logger.info(`Flushed 1-min bar for ${symbol}`, { close: bar.close, volume: bar.volume });
-    await processSymbol(symbol, bar);
-  }
 }
 
 async function processSymbol(symbol, latestBar) {
