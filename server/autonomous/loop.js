@@ -27,11 +27,12 @@ function startStream() {
   });
 
   stockStream.onStockBar(async bar => {
-    logger.info(`Received 1-min stock bar for ${bar.Symbol}`, { close: bar.ClosePrice, volume: bar.Volume });
+    const symbol = bar.Symbol || bar.S;
+    logger.info(`Received 1-min stock bar for ${symbol}`, { close: bar.ClosePrice, volume: bar.Volume });
     const formattedBar = {
       open: bar.OpenPrice, high: bar.HighPrice, low: bar.LowPrice, close: bar.ClosePrice, volume: bar.Volume
     };
-    await processSymbol(bar.Symbol, formattedBar);
+    await processSymbol(symbol, formattedBar);
   });
   
   cryptoStream.onConnect(() => {
@@ -41,11 +42,16 @@ function startStream() {
   });
 
   cryptoStream.onCryptoBar(async bar => {
-    logger.info(`Received 1-min crypto bar for ${bar.Symbol}`, { close: bar.ClosePrice, volume: bar.Volume });
+    const symbol = bar.Symbol || bar.S;
+    logger.info(`Received 1-min crypto bar for ${symbol}`, { close: bar.Close || bar.ClosePrice, volume: bar.Volume });
     const formattedBar = {
-      open: bar.OpenPrice, high: bar.HighPrice, low: bar.LowPrice, close: bar.ClosePrice, volume: bar.Volume
+      open: bar.Open || bar.OpenPrice, 
+      high: bar.High || bar.HighPrice, 
+      low: bar.Low || bar.LowPrice, 
+      close: bar.Close || bar.ClosePrice, 
+      volume: bar.Volume
     };
-    await processSymbol(bar.Symbol, formattedBar);
+    await processSymbol(symbol, formattedBar);
   });
 
   cryptoStream.onError(err => logger.error('Alpaca Crypto WS Error', { error: err.message || err }));
