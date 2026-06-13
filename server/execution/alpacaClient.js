@@ -64,6 +64,20 @@ async function closePosition(symbol) {
   const alpacaSymbol = symbol.replace(/[-/]/g, '').toUpperCase();
   logger.info('Closing position', { symbol: alpacaSymbol });
   try {
+    // Alpaca returns 403 if there are open working orders (like TP/SL brackets) for the position.
+    // We must fetch and cancel them first.
+    // Note: getOrders uses the original symbol format for crypto (e.g. BTC/USD) or equity (e.g. AAPL)
+    const normalizedSymbol = symbol.toUpperCase();
+    const openOrders = await getClient().getOrders({ status: 'open', symbols: normalizedSymbol });
+    for (const order of openOrders) {
+      logger.info('Canceling open order before closing position', { orderId: order.id });
+      await getClient().cancelOrder(order.id);
+    }
+    // Give Alpaca a brief moment to process the cancellations
+    if (openOrders.length > 0) {
+      await new Promise(r => setTimeout(r, 1000));
+    }
+
     await getClient().closePosition(alpacaSymbol);
     logger.info('Position closed', { symbol: alpacaSymbol });
     return { closed: true };
