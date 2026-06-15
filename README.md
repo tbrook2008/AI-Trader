@@ -47,6 +47,8 @@ server/
 │                             /api/status → live Alpaca balance (real-time)
 │                             /api/account → full account details
 │                             /api/positions → open positions
+├── optimize.js               Dynamic Strategy Optimizer (cron job for per-asset grid search)
+├── backtest.js               Backtesting engine for quantitative models
 ├── autonomous/
 │   ├── loop.js               WebSocket handler — 1-min bar builder + processSymbol()
 │   ├── scheduler.js          Entry point: starts stream + 60s risk monitor
@@ -57,7 +59,8 @@ server/
 │   └── ollamaNode.js         ARIA — local quant analyst (analyze + refine)
 ├── data/
 │   ├── dataAggregator.js     Historical bar priming (Alpaca REST) + news bundling
-│   └── newsScraper.js        RSS scraper — 9 feeds, 5-min cache, error throttling
+│   ├── newsScraper.js        RSS scraper — 9 feeds, 5-min cache, error throttling
+│   └── symbolParams.json     JSON store for per-symbol optimized parameters
 ├── quantitative/
 │   ├── kalman.js             1D State-Space Kalman Filter for velocity tracking
 │   ├── ouModel.js            Ornstein-Uhlenbeck process calibrated via exact linear regression

@@ -28,16 +28,16 @@ process.env.DRY_RUN = 'false';
 
 const tradeExecutor = require('./execution/tradeExecutor');
 
-const SYMBOLS = ['AAPL', 'SPY', 'BTC/USD', 'ETH/USD', 'SOL/USD', 'QQQ', 'MSFT', 'TSLA', 'NVDA', 'DOGE/USD', 'AVAX/USD'];
-const HISTORY_LIMIT = 1500;
-const DAYS_TO_FETCH = 5;
+const SYMBOLS = process.env.WATCHED_SYMBOLS ? process.env.WATCHED_SYMBOLS.split(',').map(s=>s.trim()) : ['AAPL', 'BTC/USD'];
+const HISTORY_LIMIT = 200;
+const DAYS_TO_FETCH = 2; // Test on last 48 hours for fast optimization
 
-// Grid search parameter combinations
-const minVolumeRatios = [1.0, 1.5, 2.0];
-const zScoreThresholds = [2.0, 2.5, 3.0];
-const kalmanThresholds = [1.5, 3.0];
-const trendPeriods = [20, 50, 100];
-const dynamicRR_Trendings = [1.0, 1.5, 2.0];
+// Grid search parameter combinations (reduced search space)
+const minVolumeRatios = [1.2, 1.8];
+const zScoreThresholds = [2.0, 2.8];
+const kalmanThresholds = [1.5, 2.5];
+const trendPeriods = [50];
+const dynamicRR_Trendings = [1.5, 2.0];
 const dynamicRR_MeanRevs = [1.0, 1.5];
 
 const combinations = [];
@@ -61,6 +61,7 @@ for (const v of minVolumeRatios) {
     }
   }
 }
+
 
 async function fetchHistoricalData(symbol, days) {
   const client = alpacaClient.getClient();
