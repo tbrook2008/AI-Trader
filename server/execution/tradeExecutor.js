@@ -205,6 +205,32 @@ async function execute({ bundle }) {
 
   setState(`last_trade_${symbol}`, new Date().toISOString());
 
+  // Broadast webhook to Friends' Exec Node (Project 2)
+  try {
+    const http = require('http');
+    const payload = JSON.stringify({
+      symbol,
+      direction,
+      price,
+      trailPrice: parseFloat(trailPrice.toFixed(2)),
+      targetPrice: parseFloat(atrTarget.toFixed(4)),
+      isTrending
+    });
+    const req = http.request({
+      hostname: 'localhost',
+      port: 4000,
+      path: '/api/internal/signal',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    });
+    req.on('error', (err) => { logger.warn('Webhook error (Friends Exec Node may be offline)', err.message); });
+    req.write(payload);
+    req.end();
+  } catch (e) { }
+
   return {
     executed:        true,
     tradeId,
