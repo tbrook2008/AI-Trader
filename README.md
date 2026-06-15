@@ -34,6 +34,7 @@ Alpaca WebSocket Quote Stream
         → calculateATR() & getDynamicATRMultiplier() → volatility-adjusted dynamic stop/target (base 3.5x ATR stop, dynamically scaled by recent return std-dev)
         → alpacaClient.submitOrder() → market order on Alpaca
         → tradeLogger.logTrade() → HMAC-chained SQLite record
+        → webhook broadcast → localhost:4000/api/internal/signal (AITrader-Friends Integration)
     → riskMonitor (every 60s): software stop-loss/take-profit for open crypto positions
 ```
 
@@ -226,6 +227,15 @@ KELLY_FRACTION_DIVISOR=4
 | GET | `/api/killswitch` | Kill switch status |
 | POST | `/api/killswitch` | `{"action":"activate"}` or `{"action":"deactivate"}` |
 | POST | `/api/mode` | `{"mode":"paper"}` or `{"mode":"live"}` |
+
+---
+
+## Webhook & Friends Integration
+
+AI Trader integrates with the **AITrader-Friends** Execution Node by broadcasting a webhook on every executed trade. 
+
+- **Target**: `http://localhost:4000/api/internal/signal`
+- **Payload**: Contains the trade signal (asset, action, quantity, price) so that the Execution Node can mirror the trade across all subscribed user accounts.
 
 ---
 
