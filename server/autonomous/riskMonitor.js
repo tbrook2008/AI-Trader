@@ -1,4 +1,5 @@
 const alpaca = require('../execution/alpacaClient');
+const http = require('http');
 const { getOpenTradeBySymbol, updateTradeOutcome, logTrade, updateTradeStopLoss } = require('../db/tradeLogger');
 const { isCryptoSymbol } = require('../data/dataAggregator');
 const logger = require('../utils/logger');
@@ -126,6 +127,30 @@ async function monitorRisk() {
             });
           }
           logger.info(`✅ Closed position successfully`, { symbol, pnl });
+
+          // Broadcast CLOSE to Friends
+          try {
+            const payload = JSON.stringify({
+              symbol: pos.symbol,
+              direction: 'CLOSE',
+              price: currentPrice
+            });
+            const req = http.request({
+              hostname: 'localhost',
+              port: 4000,
+              path: '/api/internal/signal',
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(payload)
+              }
+            });
+            req.on('error', (e) => logger.error(`Webhook error: ${e.message}`));
+            req.write(payload);
+            req.end();
+          } catch (e) {
+            logger.error(`Failed to send close webhook: ${e.message}`);
+          }
         } else {
           logger.error(`❌ Failed to close position during risk event`, { symbol, reason: res.reason });
         }
