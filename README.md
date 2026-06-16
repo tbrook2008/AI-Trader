@@ -235,7 +235,7 @@ KELLY_FRACTION_DIVISOR=4
 AI Trader integrates with the **AITrader-Friends** Execution Node by broadcasting a webhook on every executed trade. 
 
 - **Target**: `http://localhost:4000/api/internal/signal`
-- **Payload**: Contains the trade signal (asset, action, quantity, price) so that the Execution Node can mirror the trade across all subscribed user accounts.
+- **Payload**: Contains the trade signal (asset, action, quantity, price) so that the Execution Node can mirror the trade across all subscribed user accounts. The Master Node also broadcasts `CLOSE` signals when a position hits its trailing stop-loss or take-profit, ensuring all synced nodes close their positions concurrently.
 
 ---
 
