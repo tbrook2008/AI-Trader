@@ -111,6 +111,11 @@ async function execute({ bundle }) {
   // Step 3: Kelly sizing (no consensus score, default 80 confidence)
   const sizing = kelly.getPositionSize(symbol, price, liveBalance, 80, account.buyingPower);
   
+  // Alpaca does not support fractional shorting. We must floor the quantity.
+  if (direction === 'SHORT') {
+    sizing.qty = Math.floor(sizing.qty);
+  }
+
   if (sizing.qty === 0) {
     logger.warn('Insufficient buying power for trade', { symbol, buyingPower: account.buyingPower });
     return { executed: false, reason: 'Insufficient buying power' };
