@@ -219,7 +219,8 @@ async function execute({ bundle }) {
       price,
       trailPrice: parseFloat(trailPrice.toFixed(2)),
       targetPrice: parseFloat(atrTarget.toFixed(4)),
-      isTrending
+      isTrending,
+      positionPct: sizing ? parseFloat((sizing.positionDollars / liveBalance).toFixed(4)) : 0.05
     });
     const req = http.request({
       hostname: 'localhost',
