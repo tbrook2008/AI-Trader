@@ -40,6 +40,14 @@ async function runChecks({ consensus, symbol, positionDollars, alpacaAccount, op
   // Compute Correlation
   const correlationPass = await checkCorrelation(symbol);
 
+  // Time of Day Check (Block equity trades after 3:30 PM EST)
+  const now = new Date();
+  const estString = now.toLocaleString("en-US", {timeZone: "America/New_York"});
+  const estDate = new Date(estString);
+  const hour = estDate.getHours();
+  const minute = estDate.getMinutes();
+  const isNearMarketClose = !isCryptoSymbol(symbol) && ((hour === 15 && minute >= 30) || hour >= 16 || hour < 9 || (hour === 9 && minute < 30));
+
   const checks = [
     {
       name: 'Kill Switch OFF',
@@ -55,6 +63,11 @@ async function runChecks({ consensus, symbol, positionDollars, alpacaAccount, op
       name: 'No Crypto Shorting',
       passed: !(isCryptoSymbol(symbol) && consensus.direction === 'SHORT'),
       detail: 'Alpaca does not support short selling cryptocurrencies',
+    },
+    {
+      name: 'Not Near Market Close',
+      passed: !isNearMarketClose,
+      detail: 'Avoid opening equity positions outside of 9:30 AM to 3:30 PM EST to prevent overnight gaps and close chop',
     },
 
     {
