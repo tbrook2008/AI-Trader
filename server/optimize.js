@@ -33,9 +33,9 @@ const HISTORY_LIMIT = 200;
 const DAYS_TO_FETCH = 2; // Test on last 48 hours for fast optimization
 
 // Grid search parameter combinations (reduced search space)
-const minVolumeRatios = [1.2, 1.8];
+const minVolumeRatios = [2.0, 2.5];
 const zScoreThresholds = [2.0, 2.8];
-const kalmanThresholds = [1.5, 2.5];
+const kalmanThresholds = [3.0, 5.0, 7.0];
 const trendPeriods = [50];
 const dynamicRR_Trendings = [1.5, 2.0];
 const dynamicRR_MeanRevs = [1.0, 1.5];

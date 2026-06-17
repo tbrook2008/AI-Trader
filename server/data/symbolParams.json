@@ -1,360 +1,352 @@
 {
   "SPCX": {
-    "minVolumeRatio": 1.2,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2.8,
-    "kalmanThreshold": 1.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
-    "dynamicRR_Trending": 1.5,
+    "dynamicRR_Trending": 2,
     "dynamicRR_MeanRev": 1
   },
   "AAPL": {
-    "minVolumeRatio": 1.8,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 2.5,
+    "kalmanThreshold": 3,
+    "trendPeriod": 50,
+    "dynamicRR_Trending": 1.5,
+    "dynamicRR_MeanRev": 1
+  },
+  "MSFT": {
+    "minVolumeRatio": 2,
+    "zScoreThreshold": 2.8,
+    "kalmanThreshold": 5,
     "trendPeriod": 50,
     "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1.5
   },
-  "MSFT": {
-    "minVolumeRatio": 1.2,
+  "NVDA": {
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 2.5,
+    "kalmanThreshold": 5,
     "trendPeriod": 50,
-    "dynamicRR_Trending": 2,
+    "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1.5
   },
-  "NVDA": {
-    "minVolumeRatio": 1.2,
-    "zScoreThreshold": 2,
-    "kalmanThreshold": 1.5,
-    "trendPeriod": 50,
-    "dynamicRR_Trending": 2,
-    "dynamicRR_MeanRev": 1
-  },
   "AMZN": {
-    "minVolumeRatio": 1.8,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 2.5,
+    "kalmanThreshold": 7,
     "trendPeriod": 50,
-    "dynamicRR_Trending": 2,
+    "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1.5
   },
   "META": {
-    "minVolumeRatio": 1.2,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 2.5,
+    "kalmanThreshold": 7,
     "trendPeriod": 50,
-    "dynamicRR_Trending": 2,
+    "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1.5
   },
   "GOOGL": {
-    "minVolumeRatio": 1.8,
-    "zScoreThreshold": 2,
-    "kalmanThreshold": 1.5,
+    "minVolumeRatio": 2,
+    "zScoreThreshold": 2.8,
+    "kalmanThreshold": 5,
     "trendPeriod": 50,
     "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1.5
   },
   "TSLA": {
-    "minVolumeRatio": 1.8,
+    "minVolumeRatio": 2.5,
     "zScoreThreshold": 2.8,
-    "kalmanThreshold": 1.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
-    "dynamicRR_Trending": 1.5,
+    "dynamicRR_Trending": 2,
     "dynamicRR_MeanRev": 1
   },
   "SPY": {
-    "minVolumeRatio": 1.8,
-    "zScoreThreshold": 2,
-    "kalmanThreshold": 2.5,
+    "minVolumeRatio": 2,
+    "zScoreThreshold": 2.8,
+    "kalmanThreshold": 7,
     "trendPeriod": 50,
-    "dynamicRR_Trending": 2,
+    "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1.5
   },
   "QQQ": {
-    "minVolumeRatio": 1.2,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 2.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
-    "dynamicRR_Trending": 1.5,
+    "dynamicRR_Trending": 2,
     "dynamicRR_MeanRev": 1
   },
   "AMD": {
-    "minVolumeRatio": 1.2,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 1.5,
+    "kalmanThreshold": 5,
     "trendPeriod": 50,
     "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1
   },
   "PLTR": {
-    "minVolumeRatio": 1.8,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 2.5,
+    "kalmanThreshold": 7,
     "trendPeriod": 50,
-    "dynamicRR_Trending": 2,
+    "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1.5
   },
   "COIN": {
-    "minVolumeRatio": 1.8,
+    "minVolumeRatio": 2.5,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 2.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
     "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1
   },
   "HOOD": {
-    "minVolumeRatio": 1.8,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 2.5,
+    "kalmanThreshold": 5,
     "trendPeriod": 50,
-    "dynamicRR_Trending": 2,
-    "dynamicRR_MeanRev": 1
+    "dynamicRR_Trending": 1.5,
+    "dynamicRR_MeanRev": 1.5
   },
   "ROKU": {
-    "minVolumeRatio": 1.8,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 1.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
-    "dynamicRR_Trending": 2,
+    "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1
   },
   "UBER": {
-    "minVolumeRatio": 1.8,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 1.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
-    "dynamicRR_Trending": 2,
+    "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1
   },
   "SNOW": {
-    "minVolumeRatio": 1.8,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 2.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
     "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1
   },
   "CRWD": {
-    "minVolumeRatio": 1.2,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 2.5,
+    "kalmanThreshold": 5,
     "trendPeriod": 50,
-    "dynamicRR_Trending": 2,
+    "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1
   },
   "DDOG": {
-    "minVolumeRatio": 1.8,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 1.5,
-    "trendPeriod": 50,
-    "dynamicRR_Trending": 2,
-    "dynamicRR_MeanRev": 1
-  },
-  "SHOP": {
-    "minVolumeRatio": 1.2,
-    "zScoreThreshold": 2,
-    "kalmanThreshold": 1.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
     "dynamicRR_Trending": 2,
     "dynamicRR_MeanRev": 1
   },
   "GME": {
-    "minVolumeRatio": 1.8,
-    "zScoreThreshold": 2.8,
-    "kalmanThreshold": 1.5,
+    "minVolumeRatio": 2,
+    "zScoreThreshold": 2,
+    "kalmanThreshold": 5,
     "trendPeriod": 50,
     "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1
   },
   "AMC": {
-    "minVolumeRatio": 1.8,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 2.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
     "dynamicRR_Trending": 1.5,
-    "dynamicRR_MeanRev": 1
+    "dynamicRR_MeanRev": 1.5
   },
   "LCID": {
-    "minVolumeRatio": 1.8,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 1.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
     "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1
   },
   "RIVN": {
-    "minVolumeRatio": 1.2,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 1.5,
+    "kalmanThreshold": 5,
     "trendPeriod": 50,
     "dynamicRR_Trending": 2,
     "dynamicRR_MeanRev": 1
   },
   "NIO": {
-    "minVolumeRatio": 1.2,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 2.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
-    "dynamicRR_Trending": 1.5,
+    "dynamicRR_Trending": 2,
     "dynamicRR_MeanRev": 1
   },
   "INTC": {
-    "minVolumeRatio": 1.2,
-    "zScoreThreshold": 2.8,
-    "kalmanThreshold": 1.5,
+    "minVolumeRatio": 2.5,
+    "zScoreThreshold": 2,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
-    "dynamicRR_Trending": 1.5,
+    "dynamicRR_Trending": 2,
     "dynamicRR_MeanRev": 1
   },
   "CRM": {
-    "minVolumeRatio": 1.2,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 1.5,
+    "kalmanThreshold": 7,
     "trendPeriod": 50,
     "dynamicRR_Trending": 1.5,
-    "dynamicRR_MeanRev": 1
+    "dynamicRR_MeanRev": 1.5
   },
   "PYPL": {
-    "minVolumeRatio": 1.2,
+    "minVolumeRatio": 2.5,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 2.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
     "dynamicRR_Trending": 2,
     "dynamicRR_MeanRev": 1
   },
   "TGT": {
-    "minVolumeRatio": 1.8,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 1.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
     "dynamicRR_Trending": 2,
     "dynamicRR_MeanRev": 1
   },
   "BA": {
-    "minVolumeRatio": 1.2,
+    "minVolumeRatio": 2.5,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 1.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
-    "dynamicRR_Trending": 1.5,
+    "dynamicRR_Trending": 2,
     "dynamicRR_MeanRev": 1
   },
   "BTC/USD": {
-    "minVolumeRatio": 1.2,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 2.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
-    "dynamicRR_Trending": 1.5,
+    "dynamicRR_Trending": 2,
     "dynamicRR_MeanRev": 1
   },
   "ETH/USD": {
-    "minVolumeRatio": 1.8,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 2.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
     "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1
   },
   "SOL/USD": {
-    "minVolumeRatio": 1.2,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 2.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
-    "dynamicRR_Trending": 1.5,
+    "dynamicRR_Trending": 2,
     "dynamicRR_MeanRev": 1.5
   },
   "ADA/USD": {
-    "minVolumeRatio": 1.2,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 1.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
     "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1
   },
   "DOGE/USD": {
-    "minVolumeRatio": 1.2,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 1.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
     "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1
   },
   "AVAX/USD": {
-    "minVolumeRatio": 1.2,
-    "zScoreThreshold": 2,
-    "kalmanThreshold": 1.5,
+    "minVolumeRatio": 2,
+    "zScoreThreshold": 2.8,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
     "dynamicRR_Trending": 2,
     "dynamicRR_MeanRev": 1
   },
   "LINK/USD": {
-    "minVolumeRatio": 1.2,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 1.5,
+    "kalmanThreshold": 5,
     "trendPeriod": 50,
     "dynamicRR_Trending": 1.5,
-    "dynamicRR_MeanRev": 1
+    "dynamicRR_MeanRev": 1.5
   },
   "XRP/USD": {
-    "minVolumeRatio": 1.8,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 2.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
-    "dynamicRR_Trending": 2,
+    "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1
   },
   "DOT/USD": {
-    "minVolumeRatio": 1.2,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2.8,
-    "kalmanThreshold": 1.5,
+    "kalmanThreshold": 3,
+    "trendPeriod": 50,
+    "dynamicRR_Trending": 2,
+    "dynamicRR_MeanRev": 1
+  },
+  "LTC/USD": {
+    "minVolumeRatio": 2,
+    "zScoreThreshold": 2,
+    "kalmanThreshold": 3,
+    "trendPeriod": 50,
+    "dynamicRR_Trending": 1.5,
+    "dynamicRR_MeanRev": 1.5
+  },
+  "BCH/USD": {
+    "minVolumeRatio": 2,
+    "zScoreThreshold": 2,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
     "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1
   },
-  "LTC/USD": {
-    "minVolumeRatio": 1.2,
-    "zScoreThreshold": 2,
-    "kalmanThreshold": 2.5,
-    "trendPeriod": 50,
-    "dynamicRR_Trending": 2,
-    "dynamicRR_MeanRev": 1
-  },
-  "BCH/USD": {
-    "minVolumeRatio": 1.2,
-    "zScoreThreshold": 2.8,
-    "kalmanThreshold": 2.5,
-    "trendPeriod": 50,
-    "dynamicRR_Trending": 2,
-    "dynamicRR_MeanRev": 1
-  },
   "UNI/USD": {
-    "minVolumeRatio": 1.2,
-    "zScoreThreshold": 2.8,
-    "kalmanThreshold": 1.5,
+    "minVolumeRatio": 2,
+    "zScoreThreshold": 2,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
     "dynamicRR_Trending": 2,
     "dynamicRR_MeanRev": 1
   },
   "SHIB/USD": {
-    "minVolumeRatio": 1.2,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 1.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
     "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1
   },
   "ARB/USD": {
-    "minVolumeRatio": 1.2,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 1.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
     "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1
   },
   "LDO/USD": {
-    "minVolumeRatio": 1.2,
+    "minVolumeRatio": 2,
     "zScoreThreshold": 2,
-    "kalmanThreshold": 1.5,
+    "kalmanThreshold": 3,
     "trendPeriod": 50,
     "dynamicRR_Trending": 1.5,
     "dynamicRR_MeanRev": 1

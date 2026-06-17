@@ -98,7 +98,7 @@ function evaluate(history, symbol) {
   if (!history || history.length < 50) return 'NO_TRADE';
 
   const params = getSymbolParams(symbol);
-  const kalmanThreshold = params.kalmanThreshold || 3.0;
+  const kalmanThreshold = params.kalmanThreshold || 5.0;
 
   // We tune R based on recent volatility to make the filter adaptive
   const closes = history.map(b => b.close);
@@ -130,7 +130,7 @@ function evaluate(history, symbol) {
     // Confirm with volume
     const volumes = history.map(b => b.volume);
     const avgVol = volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
-    if (volumes[last] > avgVol * 1.2) {
+    if (volumes[last] > avgVol * 2.0) {
       return 'LONG';
     }
   }
@@ -138,7 +138,7 @@ function evaluate(history, symbol) {
   if (currentVelocity < prevVelocity && currentVelocity < -avgVelMag * kalmanThreshold) {
     const volumes = history.map(b => b.volume);
     const avgVol = volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
-    if (volumes[last] > avgVol * 1.2) {
+    if (volumes[last] > avgVol * 2.0) {
       return 'SHORT';
     }
   }
