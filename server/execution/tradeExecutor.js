@@ -64,13 +64,12 @@ async function execute({ bundle }) {
 
   if (regime === 'trending') {
     // Require MACD + High Volume + Kalman
-    const macdData = macd.calculate(history);
+    const macdDir = macd.evaluate(history);
     const kalmanDir = kalman.evaluate(history, symbol);
     const volClass = classifyVolume(history);
     
-    if (kalmanDir !== 'NO_TRADE' && macdData && (volClass === 'high' || volClass === 'climax')) {
-      if (kalmanDir === 'LONG' && macdData.histogram > 0) direction = 'LONG';
-      if (kalmanDir === 'SHORT' && macdData.histogram < 0) direction = 'SHORT';
+    if (kalmanDir !== 'NO_TRADE' && macdDir === kalmanDir && (volClass === 'high' || volClass === 'climax')) {
+      direction = kalmanDir;
     }
     if (direction !== 'NO_TRADE') strategy = 'Kalman+MACD';
   } else if (regime === 'mean-reverting') {
