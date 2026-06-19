@@ -33,6 +33,7 @@ const ouModel = require('../quantitative/ouModel');
 const { calculateATR, getDynamicATRMultiplier } = require('../quantitative/atr');
 const { analyzeVolume, classifyVolume } = require('../quantitative/volumeProfile');
 const hmm = require('../quantitative/hmm');
+const hurst = require('../quantitative/hurst');
 const vwap = require('../quantitative/vwap');
 
 const DRY_RUN            = process.env.DRY_RUN === 'true';
@@ -48,24 +49,43 @@ async function execute({ bundle }) {
   const mode   = process.env.TRADING_MODE || 'paper';
   const history = bundle.history;
 
-  // Step 1: Regime Classification via HMM (Gaussian Mixture Model)
-  const regime = hmm.classifyRegime(history);
-  const isTrending = regime === 'momentum';
+  // Step 1: Advanced Regime Detection (Hurst Exponent)
+  const H = hurst.calculateHurst(history);
+  const regime = hurst.classifyRegime(history);
+  const isTrending = regime === 'trending';
   
-  // Step 2: Quantitative Trigger
+  // Step 2: Strict Quantitative Trigger
   let direction = 'NO_TRADE';
   let strategy = '';
 
-  if (isTrending) {
-    direction = kalman.evaluate(history, symbol);
-    if (direction !== 'NO_TRADE') strategy = 'KalmanFilter';
-  } else {
-    direction = ouModel.evaluate(history, symbol);
-    if (direction !== 'NO_TRADE') strategy = 'OrnsteinUhlenbeck';
+  if (regime === 'chop') {
+    return { executed: false, reason: `Chop regime detected (H=${H.toFixed(2)}). Sitting on hands to preserve capital.` };
+  }
+
+  if (regime === 'trending') {
+    // Require MACD + High Volume + Kalman
+    const macdData = macd.calculate(history);
+    const kalmanDir = kalman.evaluate(history, symbol);
+    const volClass = classifyVolume(history);
+    
+    if (kalmanDir !== 'NO_TRADE' && macdData && (volClass === 'high' || volClass === 'climax')) {
+      if (kalmanDir === 'LONG' && macdData.histogram > 0) direction = 'LONG';
+      if (kalmanDir === 'SHORT' && macdData.histogram < 0) direction = 'SHORT';
+    }
+    if (direction !== 'NO_TRADE') strategy = 'Kalman+MACD';
+  } else if (regime === 'mean-reverting') {
+    // Require Bollinger Bands extreme + OU Model
+    const bbRsiDir = bollingerRsi.evaluate(history);
+    const ouDir = ouModel.evaluate(history, symbol);
+    
+    if (bbRsiDir === ouDir && ouDir !== 'NO_TRADE') {
+      direction = ouDir;
+      strategy = 'OU+Bollinger';
+    }
   }
 
   if (direction === 'NO_TRADE') {
-    return { executed: false, reason: 'Quantitative trigger condition not met' };
+    return { executed: false, reason: `Strict confirmation models not met for ${regime} regime` };
   }
 
   if (isTrending && history && history.length > 0) {
