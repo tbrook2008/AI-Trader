@@ -4,6 +4,7 @@ const path = require('path');
 
 // Mock dependencies to avoid real API calls & DB writes
 const alpacaClient = require('./execution/alpacaClient');
+const topstepx = require('./execution/topstepxClient');
 const kelly = require('./risk/kellyCriterion');
 const validator = require('./risk/validator');
 const tradeLogger = require('./db/tradeLogger');
@@ -19,6 +20,9 @@ logger.error = () => {};
 alpacaClient.getAccount = async () => ({ portfolioValue: 100000, buyingPower: 100000, tradingBlocked: false });
 alpacaClient.getOpenPositions = async () => ([]);
 alpacaClient.submitOrder = async (opts) => ({ orderId: 'mock-' + Date.now(), ...opts });
+topstepx.getAccountBalance = async () => ({ balance: 50000 });
+topstepx.placeMarketOrder = async (sym, side, qty) => ({ orderId: 'mock-ts-' + Date.now() });
+topstepx.flattenAllPositions = async () => true;
 validator.runChecks = async () => ({ passed: true });
 tradeLogger.logTrade = () => 'mock-trade-id';
 memory.saveSetup = () => {};
@@ -30,13 +34,13 @@ const tradeExecutor = require('./execution/tradeExecutor');
 
 const SYMBOLS = process.env.WATCHED_SYMBOLS ? process.env.WATCHED_SYMBOLS.split(',').map(s=>s.trim()) : ['AAPL', 'BTC/USD'];
 const HISTORY_LIMIT = 200;
-const DAYS_TO_FETCH = 2; // Test on last 48 hours for fast optimization
+const DAYS_TO_FETCH = 5; // Test on last 5 days to include weekdays
 
-// Grid search parameter combinations (reduced search space)
-const minVolumeRatios = [2.0, 2.5];
-const zScoreThresholds = [2.0, 2.8];
-const kalmanThresholds = [3.0, 5.0, 7.0];
-const trendPeriods = [50];
+// Grid search parameter combinations (expanded search space for hypersensitivity)
+const minVolumeRatios = [1.2, 1.5, 2.0];
+const zScoreThresholds = [1.5, 2.0, 2.5];
+const kalmanThresholds = [1.5, 3.0, 5.0];
+const trendPeriods = [20, 50];
 const dynamicRR_Trendings = [1.5, 2.0];
 const dynamicRR_MeanRevs = [1.0, 1.5];
 
@@ -168,20 +172,22 @@ async function optimizeSymbol(symbol, data) {
 
     const winRate = trades > 0 ? (wins / trades) : 0;
     
-    // We want >= 70% win rate and maximum PnL.
-    const isTargetHit = winRate >= 0.70 && totalPnL > 0;
-    const currentBestHit = bestWinRate >= 0.70 && maxPnL > 0;
+    // Prioritize maximum absolute PnL to get funded ASAP, requiring at least a 50% win rate.
+    // The previous 70% hard lock caused it to over-filter trades.
+    const isTargetHit = winRate >= 0.50 && totalPnL > 0;
+    const currentBestHit = bestWinRate >= 0.50 && maxPnL > 0;
 
     if (trades > 0) {
       if (isTargetHit) {
+        // Now prioritizing PnL over win rate directly!
         if (!currentBestHit || totalPnL > maxPnL) {
           bestWinRate = winRate;
           maxPnL = totalPnL;
           bestParams = params;
         }
       } else if (!currentBestHit) {
-        // Fallback: Try to find highest winRate, tie-break with PnL
-        if (winRate > bestWinRate || (winRate === bestWinRate && totalPnL > maxPnL)) {
+        // Fallback: Try to find highest PnL if nothing hits 50% win rate
+        if (totalPnL > maxPnL) {
           bestWinRate = winRate;
           maxPnL = totalPnL;
           bestParams = params;

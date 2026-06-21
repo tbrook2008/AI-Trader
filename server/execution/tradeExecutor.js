@@ -53,38 +53,46 @@ async function execute({ bundle }) {
   const H = hurst.calculateHurst(history);
   const regime = hurst.classifyRegime(history);
   const isTrending = regime === 'trending';
+  const regimeDetection = hurst.classifyRegime(history);
   
-  // Step 2: Strict Quantitative Trigger
+  // Step 2: Synthesize Signals (DECOUPLED TRIGGERS FOR PROFITABILITY)
   let direction = 'NO_TRADE';
-  let strategy = '';
+  let strategy  = 'None';
+  let regime    = 'none'; // 'trending' or 'mean-reverting'
 
-  if (regime === 'chop') {
-    return { executed: false, reason: `Chop regime detected (H=${H.toFixed(2)}). Sitting on hands to preserve capital.` };
+  const macdDir = macd.evaluate(history);
+  const kalmanDir = kalman.evaluate(history, symbol);
+  const ouDir = ouModel.evaluate(history, symbol);
+  const bbRsiDir = bollingerRsi.evaluate(history);
+
+  // Require MACD + High Volume OR Kalman + High Volume (Decoupled)
+  const volClass = classifyVolume(history).toUpperCase();
+
+  if (kalmanDir !== 'NO_TRADE' && (volClass === 'HIGH' || volClass === 'ABOVE_AVG')) {
+    direction = kalmanDir;
+    regime = 'trending';
+    strategy = 'Kalman';
+  } else if (macdDir !== 'NO_TRADE' && (volClass === 'HIGH' || volClass === 'ABOVE_AVG')) {
+    direction = macdDir;
+    regime = 'trending';
+    strategy = 'MACD';
   }
 
-  if (regime === 'trending') {
-    // Require MACD + High Volume + Kalman
-    const macdDir = macd.evaluate(history);
-    const kalmanDir = kalman.evaluate(history, symbol);
-    const volClass = classifyVolume(history);
-    
-    if (kalmanDir !== 'NO_TRADE' && macdDir === kalmanDir && (volClass === 'high' || volClass === 'climax')) {
-      direction = kalmanDir;
-    }
-    if (direction !== 'NO_TRADE') strategy = 'Kalman+MACD';
-  } else if (regime === 'mean-reverting') {
-    // Require Bollinger Bands extreme + OU Model
-    const bbRsiDir = bollingerRsi.evaluate(history);
-    const ouDir = ouModel.evaluate(history, symbol);
-    
-    if (bbRsiDir === ouDir && ouDir !== 'NO_TRADE') {
+  // Require Bollinger Bands extreme OR OU Model (Decoupled)
+  if (direction === 'NO_TRADE') {
+    if (ouDir !== 'NO_TRADE') {
       direction = ouDir;
-      strategy = 'OU+Bollinger';
+      regime = 'mean-reverting';
+      strategy = 'OU-Model';
+    } else if (bbRsiDir !== 'NO_TRADE') {
+      direction = bbRsiDir;
+      regime = 'mean-reverting';
+      strategy = 'Bollinger-RSI';
     }
   }
 
   if (direction === 'NO_TRADE') {
-    return { executed: false, reason: `Strict confirmation models not met for ${regime} regime` };
+    return { executed: false, reason: `Strict confirmation models not met for ${regimeDetection} regime` };
   }
 
   if (isTrending && history && history.length > 0) {
