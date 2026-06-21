@@ -64,29 +64,21 @@ async function execute({ bundle }) {
   const ouDir = ouModel.evaluate(history, symbol);
   const bbRsiDir = bollingerRsi.evaluate(history);
 
-  // Require MACD + High Volume OR Kalman + High Volume (Decoupled)
+  // Require MACD + High Volume + Kalman
   const volClass = classifyVolume(history).toUpperCase();
 
-  if (kalmanDir !== 'NO_TRADE' && (volClass === 'HIGH' || volClass === 'ABOVE_AVG')) {
+  if (kalmanDir !== 'NO_TRADE' && macdDir === kalmanDir && (volClass === 'HIGH' || volClass === 'ABOVE_AVG')) {
     direction = kalmanDir;
     regime = 'trending';
-    strategy = 'Kalman';
-  } else if (macdDir !== 'NO_TRADE' && (volClass === 'HIGH' || volClass === 'ABOVE_AVG')) {
-    direction = macdDir;
-    regime = 'trending';
-    strategy = 'MACD';
+    strategy = 'Kalman+MACD';
   }
 
-  // Require Bollinger Bands extreme OR OU Model (Decoupled)
+  // Require Bollinger Bands extreme + OU Model
   if (direction === 'NO_TRADE') {
-    if (ouDir !== 'NO_TRADE') {
+    if (ouDir !== 'NO_TRADE' && bbRsiDir === ouDir) {
       direction = ouDir;
       regime = 'mean-reverting';
-      strategy = 'OU-Model';
-    } else if (bbRsiDir !== 'NO_TRADE') {
-      direction = bbRsiDir;
-      regime = 'mean-reverting';
-      strategy = 'Bollinger-RSI';
+      strategy = 'OU+Bollinger';
     }
   }
 

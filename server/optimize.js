@@ -4,7 +4,6 @@ const path = require('path');
 
 // Mock dependencies to avoid real API calls & DB writes
 const alpacaClient = require('./execution/alpacaClient');
-const topstepx = require('./execution/topstepxClient');
 const kelly = require('./risk/kellyCriterion');
 const validator = require('./risk/validator');
 const tradeLogger = require('./db/tradeLogger');
@@ -20,9 +19,6 @@ logger.error = () => {};
 alpacaClient.getAccount = async () => ({ portfolioValue: 100000, buyingPower: 100000, tradingBlocked: false });
 alpacaClient.getOpenPositions = async () => ([]);
 alpacaClient.submitOrder = async (opts) => ({ orderId: 'mock-' + Date.now(), ...opts });
-topstepx.getAccountBalance = async () => ({ balance: 50000 });
-topstepx.placeMarketOrder = async (sym, side, qty) => ({ orderId: 'mock-ts-' + Date.now() });
-topstepx.flattenAllPositions = async () => true;
 validator.runChecks = async () => ({ passed: true });
 tradeLogger.logTrade = () => 'mock-trade-id';
 memory.saveSetup = () => {};
@@ -179,15 +175,15 @@ async function optimizeSymbol(symbol, data) {
 
     if (trades > 0) {
       if (isTargetHit) {
-        // Now prioritizing PnL over win rate directly!
         if (!currentBestHit || totalPnL > maxPnL) {
           bestWinRate = winRate;
           maxPnL = totalPnL;
           bestParams = params;
         }
       } else if (!currentBestHit) {
-        // Fallback: Try to find highest PnL if nothing hits 50% win rate
-        if (totalPnL > maxPnL) {
+        // Fallback: ALWAYS track the best PnL and win rate, even if not hitting target, so we at least use the best possible parameters instead of falling back to default.
+        // Or if both have < 0 PnL, pick the one with better PnL (less loss).
+        if (bestParams === null || totalPnL > maxPnL || (totalPnL === maxPnL && winRate > bestWinRate)) {
           bestWinRate = winRate;
           maxPnL = totalPnL;
           bestParams = params;
