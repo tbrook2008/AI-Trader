@@ -366,3 +366,5 @@ pm2 restart all --update-env
 ```
 
 > ⚠️ Only do this after 2+ weeks of consistently profitable paper trading. Start with small capital.
+## Strategy Optimizations
+Decoupled MACD/Kalman triggers and generated dynamically optimized threshold parameters to boost the trade frequency and positive EV.
