@@ -51,9 +51,8 @@ async function execute({ bundle }) {
 
   // Step 1: Advanced Regime Detection (Hurst Exponent)
   const H = hurst.calculateHurst(history);
-  const regime = hurst.classifyRegime(history);
-  const isTrending = regime === 'trending';
   const regimeDetection = hurst.classifyRegime(history);
+  const isTrending = regimeDetection === 'trending';
   
   // Step 2: Synthesize Signals (DECOUPLED TRIGGERS FOR PROFITABILITY)
   let direction = 'NO_TRADE';
@@ -179,7 +178,6 @@ async function execute({ bundle }) {
 
   // Step 5b: Volume Profile check
   const volAnalysis = analyzeVolume(bundle.history, direction, symbol);
-  const volClass    = classifyVolume(bundle.history);
   logger.info('Volume profile', { symbol, volume: volClass, ratio: volAnalysis.ratio?.toFixed(2), reason: volAnalysis.reason });
   if (!volAnalysis.supported) {
     logger.warn('Trade blocked by volume profile', { symbol, reason: volAnalysis.reason, ratio: volAnalysis.ratio });
