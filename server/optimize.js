@@ -28,34 +28,30 @@ process.env.DRY_RUN = 'false';
 
 const tradeExecutor = require('./execution/tradeExecutor');
 
-const SYMBOLS = process.env.WATCHED_SYMBOLS ? process.env.WATCHED_SYMBOLS.split(',').map(s=>s.trim()) : ['AAPL', 'BTC/USD'];
+const SYMBOLS = ['SPY', 'QQQ', 'DIA', 'IWM', 'GLD', 'USO', 'TLT'];
 const HISTORY_LIMIT = 500;
 const DAYS_TO_FETCH = 7; // Rigorous backtesting
 
-// Grid search parameter combinations (expanded search space for hypersensitivity)
-const minVolumeRatios = [1.2, 1.5, 2.0];
-const zScoreThresholds = [1.5, 2.0, 2.5];
-const kalmanThresholds = [1.5, 3.0, 5.0];
-const trendPeriods = [20, 50];
-const dynamicRR_Trendings = [1.5, 2.0];
-const dynamicRR_MeanRevs = [1.0, 1.5];
+// Grid search parameter combinations for VWAP
+const minVolumeRatios = [1.0, 1.2];
+const sdMultipliers = [1.5, 2.0];
+const rsiOversolds = [35, 40];
+const rsiOverboughts = [60, 65];
+const stopLossMultipliers = [1.0, 1.5];
 
 const combinations = [];
 for (const v of minVolumeRatios) {
-  for (const z of zScoreThresholds) {
-    for (const k of kalmanThresholds) {
-      for (const t of trendPeriods) {
-        for (const rt of dynamicRR_Trendings) {
-          for (const rm of dynamicRR_MeanRevs) {
-            combinations.push({
-              minVolumeRatio: v,
-              zScoreThreshold: z,
-              kalmanThreshold: k,
-              trendPeriod: t,
-              dynamicRR_Trending: rt,
-              dynamicRR_MeanRev: rm
-            });
-          }
+  for (const sd of sdMultipliers) {
+    for (const rsio of rsiOversolds) {
+      for (const rsib of rsiOverboughts) {
+        for (const sl of stopLossMultipliers) {
+          combinations.push({
+            minVolumeRatio: v,
+            sdMultiplier: sd,
+            rsiOversold: rsio,
+            rsiOverbought: rsib,
+            stopLossMultiplier: sl
+          });
         }
       }
     }
@@ -151,6 +147,15 @@ async function optimizeSymbol(symbol, data) {
             openPosition = null;
           }
         }
+        continue;
+      }
+
+      // Session time filter (EST)
+      const date = new Date(bar.timestamp);
+      const nyTimeStr = date.toLocaleString('en-US', { timeZone: 'America/New_York' });
+      const nyTime = new Date(nyTimeStr);
+      const timeVal = nyTime.getHours() * 100 + nyTime.getMinutes();
+      if (!((timeVal >= 945 && timeVal <= 1130) || (timeVal >= 1330 && timeVal <= 1530))) {
         continue;
       }
 

@@ -33,7 +33,7 @@ process.env.DRY_RUN = 'false';
 const tradeExecutor = require('./execution/tradeExecutor');
 
 // Config
-const SYMBOLS = ['AAPL', 'SPY', 'BTC/USD', 'ETH/USD', 'SOL/USD', 'QQQ', 'MSFT', 'TSLA', 'NVDA', 'DOGE/USD', 'AVAX/USD'];
+const SYMBOLS = ['SPY', 'QQQ', 'DIA', 'IWM', 'GLD', 'USO', 'TLT'];
 const HISTORY_LIMIT = 1500;
 const DAYS_TO_FETCH = 14;
 
@@ -143,6 +143,15 @@ async function runBacktest() {
             openPosition = null;
           }
         }
+        continue;
+      }
+
+      // Session time filter (EST)
+      const date = new Date(bar.timestamp);
+      const nyTimeStr = date.toLocaleString('en-US', { timeZone: 'America/New_York' });
+      const nyTime = new Date(nyTimeStr);
+      const timeVal = nyTime.getHours() * 100 + nyTime.getMinutes();
+      if (!((timeVal >= 945 && timeVal <= 1130) || (timeVal >= 1330 && timeVal <= 1530))) {
         continue;
       }
 

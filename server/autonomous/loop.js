@@ -65,6 +65,14 @@ async function processSymbol(symbol, latestBar) {
   try {
     if (killSwitch.isActive()) return;
 
+    // Session time filter (EST)
+    const now = new Date();
+    const nyTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const timeVal = nyTime.getHours() * 100 + nyTime.getMinutes();
+    if (!((timeVal >= 945 && timeVal <= 1130) || (timeVal >= 1330 && timeVal <= 1530))) {
+      return;
+    }
+
     // 1. Aggregate market data
     const bundle = await aggregate(symbol, latestBar);
     if (!bundle) return;
