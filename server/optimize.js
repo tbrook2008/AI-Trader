@@ -29,7 +29,7 @@ process.env.DRY_RUN = 'false';
 const tradeExecutor = require('./execution/tradeExecutor');
 
 const SYMBOLS = process.env.WATCHED_SYMBOLS ? process.env.WATCHED_SYMBOLS.split(',').map(s=>s.trim()) : ['AAPL', 'BTC/USD'];
-const HISTORY_LIMIT = 200;
+const HISTORY_LIMIT = 500;
 const DAYS_TO_FETCH = 7; // Rigorous backtesting
 
 // Grid search parameter combinations (expanded search space for hypersensitivity)
@@ -63,7 +63,10 @@ for (const v of minVolumeRatios) {
 }
 
 
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 async function fetchHistoricalData(symbol, days) {
+  await sleep(2000);
   const client = alpacaClient.getClient();
   const start = new Date();
   start.setDate(start.getDate() - days);
