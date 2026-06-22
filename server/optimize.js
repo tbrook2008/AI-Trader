@@ -30,7 +30,7 @@ const tradeExecutor = require('./execution/tradeExecutor');
 
 const SYMBOLS = process.env.WATCHED_SYMBOLS ? process.env.WATCHED_SYMBOLS.split(',').map(s=>s.trim()) : ['AAPL', 'BTC/USD'];
 const HISTORY_LIMIT = 200;
-const DAYS_TO_FETCH = 5; // Test on last 5 days to include weekdays
+const DAYS_TO_FETCH = 7; // Rigorous backtesting
 
 // Grid search parameter combinations (expanded search space for hypersensitivity)
 const minVolumeRatios = [1.2, 1.5, 2.0];
@@ -170,8 +170,8 @@ async function optimizeSymbol(symbol, data) {
     
     // Prioritize maximum absolute PnL to get funded ASAP, requiring at least a 50% win rate.
     // The previous 70% hard lock caused it to over-filter trades.
-    const isTargetHit = winRate >= 0.50 && totalPnL > 0;
-    const currentBestHit = bestWinRate >= 0.50 && maxPnL > 0;
+    const isTargetHit = winRate >= 0.65 && totalPnL > 0;
+    const currentBestHit = bestWinRate >= 0.65 && maxPnL > 0;
 
     if (trades > 0) {
       if (isTargetHit) {

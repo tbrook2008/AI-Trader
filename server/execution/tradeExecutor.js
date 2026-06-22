@@ -49,12 +49,31 @@ async function execute({ bundle }) {
   const mode   = process.env.TRADING_MODE || 'paper';
   const history = bundle.history;
 
-  // Step 1: Advanced Regime Detection (Hurst Exponent)
+  // Step 1: Timeframe aggregation
+  const { aggregateCandles, calculateEMA } = require('../utils/timeframe');
+  const history5m = aggregateCandles(history, 5);
+
+  let ema20_5m = null;
+  let ema50_5m = null;
+  let macroTrend = 'NONE';
+  
+  if (history5m.length >= 50) {
+    ema20_5m = calculateEMA(history5m.slice(-20), 20);
+    ema50_5m = calculateEMA(history5m.slice(-50), 50);
+    
+    if (ema20_5m > ema50_5m) {
+      macroTrend = 'UPTREND';
+    } else if (ema20_5m < ema50_5m) {
+      macroTrend = 'DOWNTREND';
+    }
+  }
+
+  // Step 2: Advanced Regime Detection (Hurst Exponent)
   const H = hurst.calculateHurst(history);
   const regimeDetection = hurst.classifyRegime(history);
   const isTrending = regimeDetection === 'trending';
   
-  // Step 2: Synthesize Signals (DECOUPLED TRIGGERS FOR PROFITABILITY)
+  // Step 3: Synthesize Signals (MULTI-TIMEFRAME ALIGNMENT)
   let direction = 'NO_TRADE';
   let strategy  = 'None';
   let regime    = 'none'; // 'trending' or 'mean-reverting'
@@ -67,15 +86,21 @@ async function execute({ bundle }) {
   // Require MACD + High Volume + Kalman
   const volClass = classifyVolume(history).toUpperCase();
 
-  if (kalmanDir !== 'NO_TRADE' && macdDir === kalmanDir && (volClass === 'HIGH' || volClass === 'ABOVE_AVG')) {
-    direction = kalmanDir;
+  // Multi-timeframe trend alignment strategy
+  if (macroTrend === 'UPTREND' && kalmanDir === 'LONG' && macdDir === 'LONG' && (volClass === 'HIGH' || volClass === 'ABOVE_AVG')) {
+    direction = 'LONG';
     regime = 'trending';
-    strategy = 'Kalman+MACD';
+    strategy = 'MTF-Kalman+MACD';
+  } else if (macroTrend === 'DOWNTREND' && kalmanDir === 'SHORT' && macdDir === 'SHORT' && (volClass === 'HIGH' || volClass === 'ABOVE_AVG')) {
+    direction = 'SHORT';
+    regime = 'trending';
+    strategy = 'MTF-Kalman+MACD';
   }
 
-  // Require Bollinger Bands extreme + OU Model
-  if (direction === 'NO_TRADE') {
+  // Mean-reversion fallback strategy (fade extremes if not trending)
+  if (direction === 'NO_TRADE' && !isTrending) {
     if (ouDir !== 'NO_TRADE' && bbRsiDir === ouDir) {
+      // Mean reversion is inherently contrarian, so it doesn't need macro trend alignment
       direction = ouDir;
       regime = 'mean-reverting';
       strategy = 'OU+Bollinger';
@@ -83,22 +108,9 @@ async function execute({ bundle }) {
   }
 
   if (direction === 'NO_TRADE') {
-    return { executed: false, reason: `Strict confirmation models not met for ${regimeDetection} regime` };
+    return { executed: false, reason: `MTF & Strict confirmation models not met` };
   }
 
-  if (isTrending && history && history.length > 0) {
-    const params = getSymbolParams(symbol);
-    const trendPeriod = params.trendPeriod || 50;
-    const period = Math.min(trendPeriod, history.length);
-    const recent = history.slice(-period);
-    const sma = recent.reduce((sum, b) => sum + b.close, 0) / period;
-    if (direction === 'LONG' && price < sma) {
-      return { executed: false, reason: 'Macro trend alignment failed (price below SMA)' };
-    }
-    if (direction === 'SHORT' && price > sma) {
-      return { executed: false, reason: 'Macro trend alignment failed (price above SMA)' };
-    }
-  }
 
   logger.info('Trade executor started', {
     symbol,

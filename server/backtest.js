@@ -35,7 +35,7 @@ const tradeExecutor = require('./execution/tradeExecutor');
 // Config
 const SYMBOLS = ['AAPL', 'SPY', 'BTC/USD', 'ETH/USD', 'SOL/USD', 'QQQ', 'MSFT', 'TSLA', 'NVDA', 'DOGE/USD', 'AVAX/USD'];
 const HISTORY_LIMIT = 1500;
-const DAYS_TO_FETCH = 5;
+const DAYS_TO_FETCH = 14;
 
 // We still need the original alpaca client methods to fetch historical data
 // We can use the un-mocked getClient method.
