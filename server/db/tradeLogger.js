@@ -1,7 +1,50 @@
 require('dotenv').config();
 const crypto = require('crypto');
+const https = require('https');
 const { getDb, getState, setState } = require('./schema');
 const logger = require('../utils/logger');
+
+function pushToSupabase(trade) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
+    logger.warn('Supabase URL or Key missing, skipping cloud sync.');
+    return;
+  }
+  
+  const payload = JSON.stringify({
+    bot_name: 'AI Trader',
+    trade_date: new Date().toISOString(),
+    asset: trade.symbol,
+    side: trade.direction,
+    entry_price: trade.entry_price,
+    exit_price: trade.exit_price,
+    pnl: trade.pnl
+  });
+
+  const url = new URL(`${process.env.SUPABASE_URL}/rest/v1/trade_history`);
+  const req = https.request({
+    hostname: url.hostname,
+    port: 443,
+    path: url.pathname,
+    method: 'POST',
+    headers: {
+      'apikey': process.env.SUPABASE_KEY,
+      'Authorization': `Bearer ${process.env.SUPABASE_KEY}`,
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(payload),
+      'Prefer': 'return=minimal'
+    }
+  }, (res) => {
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      logger.info('Successfully synced trade to Supabase', { tradeId: trade.id });
+    } else {
+      logger.error('Failed to sync trade to Supabase', { statusCode: res.statusCode });
+    }
+  });
+
+  req.on('error', (err) => logger.error('Supabase request error', { error: err.message }));
+  req.write(payload);
+  req.end();
+}
 
 function createHmac(data) {
   return crypto
@@ -130,6 +173,14 @@ function updateTradeOutcome({ tradeId, exitPrice, pnl, status, scaleStage, remai
   }
 
   logger.info('Trade outcome updated', { tradeId, pnl, status, scaleStage, remainingQty });
+
+  // Push to Supabase if trade is closed
+  if (status === 'closed' || status === 'liquidated') {
+    const trade = db.prepare('SELECT * FROM trades WHERE id = ?').get(tradeId);
+    if (trade) {
+      pushToSupabase(trade);
+    }
+  }
 }
 
 function updateTradeStopLoss(tradeId, stopLoss) {
