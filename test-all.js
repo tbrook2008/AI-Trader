@@ -4,14 +4,20 @@
  * Run: node test-all.js
  */
 require('dotenv').config();
+process.env.MAX_POSITION_PCT = process.env.MAX_POSITION_PCT || '0.06';
 const { computeEMA } = require('./server/quantitative/macd');
 const { computeSMA, computeSD, computeRSI } = require('./server/quantitative/bollingerRsi');
 const { calculateATR } = require('./server/quantitative/atr');
 const { analyzeVolume, classifyVolume } = require('./server/quantitative/volumeProfile');
 const macd = require('./server/quantitative/macd');
 const bollingerRsi = require('./server/quantitative/bollingerRsi');
+const vwapReversion = require('./server/quantitative/vwapReversion');
 const { getPositionSize } = require('./server/risk/kellyCriterion');
 const { isCryptoSymbol } = require('./server/data/dataAggregator');
+const { getPrecision, roundToStep, calculateScaleOutQty } = require('./server/utils/rounding');
+const { initDb, getDb } = require('./server/db/schema');
+const { logTrade, updateTradeScaleOut, updateTradeOutcome, getOpenTradeBySymbol } = require('./server/db/tradeLogger');
+const { execSync } = require('child_process');
 
 let passed = 0;
 let failed = 0;
@@ -180,7 +186,8 @@ test('getPositionSize returns valid sizing object', () => {
   const sizing = getPositionSize('BTC/USD', 80000, 100000, 65);
   assert(sizing.qty > 0, `Expected qty > 0, got ${sizing.qty}`);
   assert(sizing.positionDollars > 0, `Expected positionDollars > 0`);
-  assert(sizing.positionDollars <= 100000 * 0.06, `Position should respect MAX_POSITION_PCT=6%`);
+  const maxAllowed = 100000 * parseFloat(process.env.MAX_POSITION_PCT || '0.10');
+  assert(sizing.positionDollars <= maxAllowed, `Position should respect MAX_POSITION_PCT`);
 });
 
 test('Higher confidence produces larger position', () => {
@@ -222,6 +229,134 @@ test('RSI ≈ 50 in flat market', () => {
   assert(last > 30 && last < 70, `RSI should be ~50 in flat market, got ${last?.toFixed(1)}`);
 });
 
+// ─── VWAP Mean Reversion M1 Tests ─────────────────────────────────────────────
+console.log('\n📊 VWAP Mean Reversion M1 Tests');
+
+function makeVWAPTestBars(type = 'RANGE_LONG', numBars = 30, startTimeET = '2026-08-04T13:46:00Z') {
+  const bars = [];
+  const baseTime = new Date(startTimeET).getTime();
+  for (let i = 0; i < numBars - 1; i++) {
+    const price = 100 + (i % 2 === 0 ? 0.2 : -0.2);
+    bars.push({
+      open: price,
+      high: price + 0.3,
+      low: price - 0.3,
+      close: price,
+      volume: 1000,
+      timestamp: new Date(baseTime + i * 60000).toISOString()
+    });
+  }
+
+  const lastTimeISO = new Date(baseTime + (numBars - 1) * 60000).toISOString();
+
+  if (type === 'RANGE_LONG') {
+    bars.push({
+      open: 95.0,
+      high: 95.0,
+      low: 89.5,
+      close: 90.0,
+      volume: 3000,
+      timestamp: lastTimeISO
+    });
+  } else if (type === 'RANGE_SHORT') {
+    bars.push({
+      open: 105.0,
+      high: 110.5,
+      low: 105.0,
+      close: 110.0,
+      volume: 3000,
+      timestamp: lastTimeISO
+    });
+  } else if (type === 'SQUEEZE') {
+    for (let i = 0; i < bars.length; i++) {
+      bars[i].high = bars[i].close + 1.2;
+      bars[i].low = bars[i].close - 1.2;
+    }
+    bars.push({
+      open: 99.1,
+      high: 100.3,
+      low: 97.9,
+      close: 98.9,
+      volume: 3000,
+      timestamp: lastTimeISO
+    });
+  } else if (type === 'TREND') {
+    const trendBars = [];
+    const startTime = new Date('2026-08-04T13:16:00Z').getTime();
+    for (let i = 0; i < 60; i++) {
+      const price = 100 + i * 0.8;
+      trendBars.push({
+        open: price - 0.2,
+        high: price + 0.5,
+        low: price - 0.3,
+        close: price,
+        volume: 1000 + (i % 5) * 100,
+        timestamp: new Date(startTime + i * 60000).toISOString()
+      });
+    }
+    return trendBars;
+  }
+
+  return bars;
+}
+
+test('R1: Returns null when history < 30 bars', () => {
+  const bars = makeVWAPTestBars('RANGE_LONG', 29);
+  const signal = vwapReversion.evaluate(bars);
+  assertEqual(signal, null, 'Should return null for history < 30');
+});
+
+test('R1: Returns null when ADX >= 25 or Hurst > 0.55 (trending market)', () => {
+  const bars = makeVWAPTestBars('TREND');
+  const signal = vwapReversion.evaluate(bars);
+  assertEqual(signal, null, 'Should return null in strong trend');
+});
+
+test('R2: Returns null before 10:15 AM ET', () => {
+  const bars = makeVWAPTestBars('RANGE_LONG', 30, '2026-08-04T13:45:00Z');
+  const signal = vwapReversion.evaluate(bars);
+  assertEqual(signal, null, 'Should return null before 10:15 AM ET');
+});
+
+test('R2: Allows evaluation at 10:15 AM ET with sessionTimeET formatted', () => {
+  const bars = makeVWAPTestBars('RANGE_LONG', 30, '2026-08-04T13:46:00Z');
+  const signal = vwapReversion.evaluate(bars);
+  assert(signal !== null, 'Should generate signal at 10:15 AM ET');
+  assertEqual(signal.metadata.sessionTimeET, '10:15', 'Expected sessionTimeET to be 10:15');
+});
+
+test('R3: Returns null when VWAP band squeeze detected (|vwap - close| <= 1.5 * atr)', () => {
+  const bars = makeVWAPTestBars('SQUEEZE', 30, '2026-08-04T13:46:00Z');
+  const signal = vwapReversion.evaluate(bars);
+  assertEqual(signal, null, 'Should return null when band squeeze detected');
+});
+
+test('ScaleOutTarget & metadata: LONG signal exports correct 1 SD scale-out target and bands', () => {
+  const bars = makeVWAPTestBars('RANGE_LONG', 30, '2026-08-04T13:46:00Z');
+  const signal = vwapReversion.evaluate(bars);
+  assert(signal !== null, 'Expected valid LONG signal');
+  assertEqual(signal.action, 'LONG');
+  assertEqual(signal.scaleOutTarget, signal.metadata.lowerBand1SD, 'scaleOutTarget for LONG should equal lowerBand1SD (vwap - sd)');
+  assert(signal.scaleOutTarget < signal.target, 'scaleOutTarget should be below vwap target');
+  assert(signal.scaleOutTarget > signal.entry, 'scaleOutTarget should be above entry');
+  assert(typeof signal.metadata.adx === 'number', 'adx should be in metadata');
+  assert(typeof signal.metadata.hurst === 'number', 'hurst should be in metadata');
+  assert(typeof signal.metadata.upperBand1SD === 'number', 'upperBand1SD should be in metadata');
+  assert(typeof signal.metadata.lowerBand1SD === 'number', 'lowerBand1SD should be in metadata');
+});
+
+test('ScaleOutTarget & metadata: SHORT signal exports correct 1 SD scale-out target and bands', () => {
+  const bars = makeVWAPTestBars('RANGE_SHORT', 30, '2026-08-04T13:46:00Z');
+  const signal = vwapReversion.evaluate(bars);
+  assert(signal !== null, 'Expected valid SHORT signal');
+  assertEqual(signal.action, 'SHORT');
+  assertEqual(signal.scaleOutTarget, signal.metadata.upperBand1SD, 'scaleOutTarget for SHORT should equal upperBand1SD (vwap + sd)');
+  assert(signal.scaleOutTarget > signal.target, 'scaleOutTarget should be above vwap target');
+  assert(signal.scaleOutTarget < signal.entry, 'scaleOutTarget should be below entry');
+  assert(typeof signal.metadata.adx === 'number', 'adx should be in metadata');
+  assert(typeof signal.metadata.hurst === 'number', 'hurst should be in metadata');
+});
+
 // ─── Integration: Full Pipeline Syntax Check ──────────────────────────────────
 console.log('\n📊 Integration: Module Load Test');
 
@@ -243,6 +378,61 @@ test('dataAggregator loads without errors', () => {
 test('alpacaClient loads without errors', () => {
   require('./server/execution/alpacaClient');
 });
+
+// ─── Database & Scale-Out Persistence Tests ────────────────────────────────────
+console.log('\n📊 Database Scale-Out Persistence Tests');
+
+test('Schema & tradeLogger handle scale_stage, scale_out_target, remaining_qty', () => {
+  initDb();
+  const testSymbol = 'SPY_TEST_' + Date.now();
+  const tradeId = logTrade({
+    symbol: testSymbol,
+    direction: 'LONG',
+    qty: 100,
+    entryPrice: 500,
+    stopLoss: 490,
+    targetPrice: 510,
+    scaleOutTarget: 505,
+    scaleStage: 0,
+    remainingQty: 100,
+    alpacaOrderId: 'mock_order_1',
+    mode: 'paper'
+  });
+
+  assert(tradeId > 0, 'logTrade should return valid ID');
+  let openTrade = getOpenTradeBySymbol(testSymbol);
+  assert(openTrade !== undefined, 'getOpenTradeBySymbol should return trade');
+  assertEqual(openTrade.scale_stage, 0, 'Initial scale_stage should be 0');
+  assertEqual(openTrade.scale_out_target, 505, 'scale_out_target should be 505');
+  assertEqual(openTrade.remaining_qty, 100, 'remaining_qty should be 100');
+
+  // Transition to Stage 1
+  updateTradeScaleOut({ tradeId, scaleStage: 1, remainingQty: 50, stopLoss: 500 });
+  openTrade = getOpenTradeBySymbol(testSymbol);
+  assertEqual(openTrade.scale_stage, 1, 'Updated scale_stage should be 1');
+  assertEqual(openTrade.remaining_qty, 50, 'Updated remaining_qty should be 50');
+  assertEqual(openTrade.stop_loss, 500, 'Ratchet stop_loss should be 500');
+
+  // Transition to Stage 2
+  updateTradeOutcome({ tradeId, exitPrice: 510, pnl: 750, status: 'closed', scaleStage: 2, remainingQty: 0 });
+  const db = getDb();
+  const closedTrade = db.prepare('SELECT * FROM trades WHERE id = ?').get(tradeId);
+  assertEqual(closedTrade.status, 'closed', 'Status should be closed');
+  assertEqual(closedTrade.scale_stage, 2, 'Closed scale_stage should be 2');
+  assertEqual(closedTrade.remaining_qty, 0, 'Closed remaining_qty should be 0');
+  assertEqual(closedTrade.pnl, 750, 'PnL should be recorded');
+});
+
+// ─── Synthetic E2E Strategy Test Runner Integration ──────────────────────────
+console.log('\n📊 Synthetic E2E Strategy Tests (test-vwap-e2e.js)');
+try {
+  execSync('node test-vwap-e2e.js', { stdio: 'inherit' });
+  console.log('  ✅ test-vwap-e2e.js process isolation run passed');
+  passed++;
+} catch (err) {
+  console.log(`  ❌ test-vwap-e2e.js failed: ${err.message}`);
+  failed++;
+}
 
 // ─── Summary ──────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(50)}`);

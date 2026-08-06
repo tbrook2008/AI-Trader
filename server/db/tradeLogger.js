@@ -34,24 +34,32 @@ function logDecision({ symbol, geminiScore, geminiThesis, ollamaSentiment, deeps
   return result.lastInsertRowid;
 }
 
-function logTrade({ symbol, direction, qty, entryPrice, stopLoss, targetPrice, alpacaOrderId, decisionId, mode }) {
+function logTrade({ symbol, direction, qty, entryPrice, stopLoss, targetPrice, scaleOutTarget, scaleStage = 0, remainingQty, alpacaOrderId, decisionId, mode }) {
   const db = getDb();
   const timestamp = new Date().toISOString();
   const prevHmac = getState('last_hmac');
 
-  const tradeData = JSON.stringify({ timestamp, symbol, direction, qty, entryPrice, stopLoss, alpacaOrderId });
+  const initialScaleStage = scaleStage ?? 0;
+  const initialRemainingQty = remainingQty ?? qty;
+
+  const tradeData = JSON.stringify({
+    timestamp, symbol, direction, qty, entryPrice, stopLoss, targetPrice,
+    scaleStage: initialScaleStage, scaleOutTarget: scaleOutTarget ?? null, remainingQty: initialRemainingQty, alpacaOrderId
+  });
   const hmac = createHmac(prevHmac + tradeData);
 
   const stmt = db.prepare(`
     INSERT INTO trades
       (timestamp, symbol, direction, qty, entry_price, stop_loss, target_price,
+       scale_stage, scale_out_target, remaining_qty,
        alpaca_order_id, status, hmac, prev_hmac, decision_id, mode)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'submitted', ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'submitted', ?, ?, ?, ?)
   `);
 
   const result = stmt.run(
     timestamp, symbol, direction, qty,
     entryPrice ?? null, stopLoss ?? null, targetPrice ?? null,
+    initialScaleStage, scaleOutTarget ?? null, initialRemainingQty,
     alpacaOrderId ?? null, hmac, prevHmac,
     decisionId ?? null, mode || 'paper'
   );
@@ -63,14 +71,43 @@ function logTrade({ symbol, direction, qty, entryPrice, stopLoss, targetPrice, a
   const total = parseInt(getState('total_trades') || '0') + 1;
   setState('total_trades', total);
 
-  logger.info('Trade logged', { id: result.lastInsertRowid, symbol, direction, qty, hmac: hmac.slice(0, 8) + '...' });
+  logger.info('Trade logged', { id: result.lastInsertRowid, symbol, direction, qty, scaleOutTarget, remainingQty: initialRemainingQty, hmac: hmac.slice(0, 8) + '...' });
   return result.lastInsertRowid;
 }
 
-function updateTradeOutcome({ tradeId, exitPrice, pnl, status }) {
+function updateTradeScaleOut(params) {
   const db = getDb();
-  db.prepare('UPDATE trades SET exit_price = ?, pnl = ?, status = ? WHERE id = ?')
-    .run(exitPrice ?? null, pnl ?? null, status, tradeId);
+  let tradeId, scaleStage, remainingQty, stopLoss;
+  if (typeof params === 'object' && params !== null && !Array.isArray(params)) {
+    ({ tradeId, scaleStage, remainingQty, stopLoss } = params);
+  } else {
+    [tradeId, scaleStage, remainingQty, stopLoss] = arguments;
+  }
+
+  if (stopLoss !== undefined && stopLoss !== null) {
+    db.prepare('UPDATE trades SET scale_stage = ?, remaining_qty = ?, stop_loss = ? WHERE id = ?')
+      .run(scaleStage, remainingQty, stopLoss, tradeId);
+  } else {
+    db.prepare('UPDATE trades SET scale_stage = ?, remaining_qty = ? WHERE id = ?')
+      .run(scaleStage, remainingQty, tradeId);
+  }
+  logger.info('Trade scale-out state updated', { tradeId, scaleStage, remainingQty, stopLoss });
+}
+
+function updateTradeOutcome({ tradeId, exitPrice, pnl, status, scaleStage, remainingQty }) {
+  const db = getDb();
+  if (scaleStage !== undefined || remainingQty !== undefined) {
+    db.prepare(`
+      UPDATE trades 
+      SET exit_price = ?, pnl = ?, status = ?,
+          scale_stage = COALESCE(?, scale_stage),
+          remaining_qty = COALESCE(?, remaining_qty)
+      WHERE id = ?
+    `).run(exitPrice ?? null, pnl ?? null, status, scaleStage ?? null, remainingQty ?? null, tradeId);
+  } else {
+    db.prepare('UPDATE trades SET exit_price = ?, pnl = ?, status = ? WHERE id = ?')
+      .run(exitPrice ?? null, pnl ?? null, status, tradeId);
+  }
 
   // Update daily PnL
   const today = new Date().toISOString().slice(0, 10);
@@ -92,7 +129,7 @@ function updateTradeOutcome({ tradeId, exitPrice, pnl, status }) {
     }
   }
 
-  logger.info('Trade outcome updated', { tradeId, pnl, status });
+  logger.info('Trade outcome updated', { tradeId, pnl, status, scaleStage, remainingQty });
 }
 
 function updateTradeStopLoss(tradeId, stopLoss) {
@@ -129,4 +166,4 @@ function getDailyPnl() {
   return storedDate === today ? parseFloat(getState('daily_pnl') || '0') : 0;
 }
 
-module.exports = { logDecision, logTrade, updateTradeOutcome, updateTradeStopLoss, getRecentDecisions, getRecentTrades, getOpenTradeBySymbol, getDailyPnl };
+module.exports = { logDecision, logTrade, updateTradeScaleOut, updateTradeOutcome, updateTradeStopLoss, getRecentDecisions, getRecentTrades, getOpenTradeBySymbol, getDailyPnl };

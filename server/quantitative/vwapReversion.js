@@ -12,6 +12,9 @@
 
 const fs = require('fs');
 const path = require('path');
+const { computeADX, isTrending } = require('./adx');
+const { calculateHurst } = require('./hurst');
+
 let symbolParamsCache = null;
 function getSymbolParams(symbol) {
   if (global.OPTIMIZE_PARAMS) return global.OPTIMIZE_PARAMS;
@@ -23,6 +26,53 @@ function getSymbolParams(symbol) {
     } catch (e) { symbolParamsCache = {}; }
   }
   return symbolParamsCache[symbol] || {};
+}
+
+/**
+ * Parse timestamp into US Eastern Time (America/New_York)
+ * @param {string|number|Date} ts
+ * @returns {{ totalMinutes: number, timeVal: number, sessionTimeET: string } | null}
+ */
+function parseETTime(ts) {
+  if (!ts) return null;
+  let date;
+  if (ts instanceof Date) {
+    date = ts;
+  } else if (typeof ts === 'number') {
+    date = ts < 10000000000 ? new Date(ts * 1000) : new Date(ts);
+  } else if (typeof ts === 'string') {
+    date = new Date(ts);
+  } else {
+    return null;
+  }
+
+  if (isNaN(date.getTime())) return null;
+
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false
+  });
+
+  const parts = formatter.formatToParts(date);
+  let hour = null;
+  let minute = null;
+  for (const part of parts) {
+    if (part.type === 'hour') hour = parseInt(part.value, 10);
+    if (part.type === 'minute') minute = parseInt(part.value, 10);
+  }
+
+  if (hour === null || minute === null) return null;
+  if (hour === 24) hour = 0;
+
+  const totalMinutes = hour * 60 + minute;
+  const timeVal = hour * 100 + minute;
+  const formattedHour = String(hour).padStart(2, '0');
+  const formattedMinute = String(minute).padStart(2, '0');
+  const sessionTimeET = `${formattedHour}:${formattedMinute}`;
+
+  return { totalMinutes, timeVal, sessionTimeET };
 }
 
 /**
@@ -109,7 +159,7 @@ function calculateATR(candles, period = 14) {
  * Calculate Daily Anchored VWAP and SD Bands
  */
 function calculateVWAP(candles) {
-    if (candles.length === 0) return null;
+    if (!candles || candles.length === 0) return null;
 
     // Anchor VWAP to the start of the current day for the last candle.
     let lastCandle = candles[candles.length - 1];
@@ -154,11 +204,16 @@ function calculateVWAP(candles) {
 
     const sdMultiplier = getSymbolParams(candles[0].symbol || 'SPY').sdMultiplier || 2.0;
 
+    const atr = calculateATR(candles, 14);
+
     return {
         vwap: vwap,
         upperBand: vwap + sdMultiplier * sd,
         lowerBand: vwap - sdMultiplier * sd,
-        sd: sd
+        upperBand1SD: vwap + sd,
+        lowerBand1SD: vwap - sd,
+        sd: sd,
+        atr: atr
     };
 }
 
@@ -168,12 +223,26 @@ function calculateVWAP(candles) {
  * @returns {Object|null} Signal object or null
  */
 function evaluate(history) {
-    // Need at least enough history for 20-period volume SMA and 14-period RSI/ATR
-    if (!history || history.length < 21) {
+    // Need at least 30 bars of history for ADX and Hurst indicators
+    if (!history || history.length < 30) {
         return null;
     }
 
     const currentCandle = history[history.length - 1];
+
+    // R2 Time-of-Day Filter (ignore signals before 10:15 AM ET, i.e. timeVal < 1015 or totalMinutes < 615)
+    const timestamp = currentCandle.timestamp || currentCandle.time;
+    const etTime = parseETTime(timestamp);
+    if (!etTime || etTime.timeVal < 1015) {
+        return null;
+    }
+
+    // R1 Macro Regime Filter (reject when ADX >= 25 or Hurst > 0.55)
+    const adx = computeADX(history, 14);
+    const hurst = calculateHurst(history);
+    if ((adx !== null && adx >= 25) || (hurst !== null && hurst > 0.55)) {
+        return null;
+    }
 
     const vwapData = calculateVWAP(history);
     if (!vwapData) return null;
@@ -187,38 +256,76 @@ function evaluate(history) {
     const atr = calculateATR(history, 14);
     if (atr === null) return null;
 
+    const { vwap, upperBand, lowerBand, sd } = vwapData;
+
+    // R3 VWAP Band Squeeze Validator (distance |vwap - close| must be > 1.5 * atr)
+    if (Math.abs(vwap - currentCandle.close) <= 1.5 * atr) {
+        return null;
+    }
+
     const params = getSymbolParams(history[0].symbol || 'SPY');
     const rsiOversold = params.rsiOversold || 35;
     const rsiOverbought = params.rsiOverbought || 65;
     const volumeReq = params.minVolumeRatio || 1.2;
     const slMultiplier = params.stopLossMultiplier || 1.5;
 
-    const { vwap, upperBand, lowerBand } = vwapData;
     const isHighVolume = currentCandle.volume >= (volumeReq * volumeSMA);
+    const upperBand1SD = vwap + sd;
+    const lowerBand1SD = vwap - sd;
 
     // LONG Signal
-    // Price is below the lower band
     const extendedBelow = currentCandle.close <= lowerBand;
     if (extendedBelow && rsi <= rsiOversold && isHighVolume) {
+        const scaleOutTarget = lowerBand1SD;
         return {
             action: 'LONG',
             entry: currentCandle.close,
             target: vwap,
+            scaleOutTarget: scaleOutTarget,
             stopLoss: currentCandle.close - (slMultiplier * atr),
-            metadata: { rsi, vwap, lowerBand, volume: currentCandle.volume, volumeSMA, atr }
+            metadata: {
+                rsi,
+                vwap,
+                lowerBand,
+                upperBand,
+                upperBand1SD,
+                lowerBand1SD,
+                scaleOutTarget,
+                volume: currentCandle.volume,
+                volumeSMA,
+                atr,
+                adx,
+                hurst,
+                sessionTimeET: etTime.sessionTimeET
+            }
         };
     }
 
     // SHORT Signal
-    // Price is above the upper band
     const extendedAbove = currentCandle.close >= upperBand;
     if (extendedAbove && rsi >= rsiOverbought && isHighVolume) {
+        const scaleOutTarget = upperBand1SD;
         return {
             action: 'SHORT',
             entry: currentCandle.close,
             target: vwap,
+            scaleOutTarget: scaleOutTarget,
             stopLoss: currentCandle.close + (slMultiplier * atr),
-            metadata: { rsi, vwap, upperBand, volume: currentCandle.volume, volumeSMA, atr }
+            metadata: {
+                rsi,
+                vwap,
+                lowerBand,
+                upperBand,
+                upperBand1SD,
+                lowerBand1SD,
+                scaleOutTarget,
+                volume: currentCandle.volume,
+                volumeSMA,
+                atr,
+                adx,
+                hurst,
+                sessionTimeET: etTime.sessionTimeET
+            }
         };
     }
 
@@ -227,5 +334,9 @@ function evaluate(history) {
 
 module.exports = {
     calculateVWAP,
+    calculateRSI,
+    calculateVolumeSMA,
+    calculateATR,
     evaluate
 };
+

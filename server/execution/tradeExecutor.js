@@ -22,11 +22,10 @@ function getSymbolParams(symbol) {
       else symbolParamsCache = {};
     } catch (e) { symbolParamsCache = {}; }
   }
-  return symbolParamsCache[symbol] || {};
+  return symbolParamsCache[symbol] || symbolParamsCache['SPY'] || {};
 }
 
 const vwapReversion = require('../quantitative/vwapReversion');
-const propRiskManager = require('../risk/propRiskManager');
 const { calculateATR, getDynamicATRMultiplier } = require('../quantitative/atr');
 const { analyzeVolume, classifyVolume } = require('../quantitative/volumeProfile');
 
@@ -42,6 +41,12 @@ async function execute({ bundle }) {
   const price  = bundle.price;
   const mode   = process.env.TRADING_MODE || 'paper';
   const history = bundle.history;
+
+  const params = getSymbolParams(symbol);
+  if (Object.keys(params).length === 0) {
+    logger.warn('Trade rejected: Symbol has no optimized parameters', { symbol });
+    return { executed: false, reason: 'Symbol not optimized in symbolParams.json' };
+  }
 
   const signal = vwapReversion.evaluate(history);
   if (!signal) {
@@ -82,10 +87,20 @@ async function execute({ bundle }) {
     return { executed: false, reason: 'Alpaca account trading blocked' };
   }
 
-  // Step 3: Prop Firm sizing
+  // Step 3: Dynamic Sizing (Alpaca)
   let qty = 0;
   try {
-    qty = propRiskManager.calculatePositionSize(symbol, price, signal.stopLoss);
+    const riskPct = parseFloat(process.env.RISK_PCT || '0.02');
+    const riskAmount = liveBalance * riskPct;
+    const stopDistance = Math.abs(price - signal.stopLoss);
+    
+    if (stopDistance <= 0) throw new Error("Invalid stop distance");
+    
+    // Calculate raw fractional quantity based on risk
+    let rawQty = riskAmount / stopDistance;
+    
+    // Alpaca supports fractional shares, round to 4 decimals
+    qty = Math.floor(rawQty * 10000) / 10000;
   } catch (err) {
     logger.warn('Failed to calculate position size', { symbol, error: err.message });
     return { executed: false, reason: 'Invalid position sizing' };
@@ -156,6 +171,10 @@ async function execute({ bundle }) {
     return { executed: false, reason: `Alpaca Error: ${err.message}` };
   }
 
+  const scaleOutTarget = signal.scaleOutTarget != null 
+    ? parseFloat(signal.scaleOutTarget.toFixed(4)) 
+    : null;
+
   // Step 8: Log trade — store ATR-derived stop/target so riskMonitor can pick them up
   const tradeId = logTrade({
     symbol,
@@ -164,6 +183,9 @@ async function execute({ bundle }) {
     entryPrice:     price,
     stopLoss:       parseFloat(atrStop.toFixed(4)),
     targetPrice:    parseFloat(atrTarget.toFixed(4)),
+    scaleOutTarget,
+    scaleStage:     0,
+    remainingQty:   sizing.qty,
     alpacaOrderId:  order.orderId,
     decisionId:     strategy, // Use strategy name as decision ID for logging
     mode,
@@ -219,6 +241,9 @@ async function execute({ bundle }) {
     targetDist:      parseFloat(targetDist.toFixed(2)),
     targetPrice:     parseFloat(atrTarget.toFixed(4)),
     stopLossPrice:   parseFloat(atrStop.toFixed(4)),
+    scaleOutTarget,
+    scaleStage:      0,
+    remainingQty:    sizing.qty,
     positionDollars: sizing.positionDollars,
   };
 }

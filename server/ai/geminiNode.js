@@ -71,8 +71,8 @@ MARKET DATA:
 - Day High/Low:    ${bundle.high} / ${bundle.low}
 - Volume:          ${bundle.volume}
 
-RECENT HEADLINES (${bundle.headlines.length}):
-${bundle.headlines.slice(0, 6).map((h, i) => `${i + 1}. [${h.source}] ${h.title}`).join('\n')}
+RECENT HEADLINES (${(bundle.headlines || []).length}):
+${(bundle.headlines || []).slice(0, 6).map((h, i) => `${i + 1}. [${h.source}] ${h.title}`).join('\n')}
 
 ${isCrypto ? 'NOTE: This is a crypto asset. Consider broader crypto market conditions.\n' : ''}
 Return ONLY this JSON (no markdown, no explanation):

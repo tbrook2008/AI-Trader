@@ -21,3 +21,7 @@ This file contains the context of the AI Trader project so that cloud agents can
 - This bot trades real money. Slip-ups cannot happen. Make sure all changes are tested, and any orphaned positions are closely tracked and exited for profit.
 
 When starting a new task, always refer to this memory file to understand the architecture and constraints.
+
+- **Institutional VWAP Upgrade:** Deployed comprehensive VWAP mean reversion strategy combining ADX, Hurst, and a 10:15 AM ET session filter.
+- **Dynamic Scale-Out:** `riskMonitor.js` now features a 3-stage scale-out pipeline with 50% TP at the 1 SD band and stop ratcheting to breakeven.
+- **Bug Fix:** Removed Topstep-specific `propRiskManager` logic from `tradeExecutor.js`, replacing it with a 2% account risk sizing model using Alpaca's fractional share capability.

@@ -49,6 +49,9 @@ function initDb() {
       entry_price      REAL,
       stop_loss        REAL,
       target_price     REAL,
+      scale_stage      INTEGER DEFAULT 0,
+      scale_out_target REAL,
+      remaining_qty    REAL,
       alpaca_order_id  TEXT,
       status           TEXT    NOT NULL DEFAULT 'submitted',
       exit_price       REAL,
@@ -89,6 +92,8 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_memory_symbol      ON strategy_memory (symbol);
   `);
 
+  migrateSchema(db);
+
   // Seed default system state values
   const seed = db.prepare('INSERT OR IGNORE INTO system_state (key, value) VALUES (?, ?)');
   const seeds = [
@@ -108,6 +113,44 @@ function initDb() {
 
   logger.info('Database initialized', { path: DB_PATH });
   return db;
+}
+
+function migrateSchema(db) {
+  const columns = db.prepare("PRAGMA table_info(trades)").all().map(c => c.name);
+
+  if (!columns.includes('scale_stage')) {
+    try {
+      db.exec('ALTER TABLE trades ADD COLUMN scale_stage INTEGER DEFAULT 0');
+      logger.info('Migrated schema: added scale_stage column to trades');
+    } catch (err) {
+      logger.warn('Schema migration warning for scale_stage', { error: err.message });
+    }
+  }
+
+  if (!columns.includes('scale_out_target')) {
+    try {
+      db.exec('ALTER TABLE trades ADD COLUMN scale_out_target REAL');
+      logger.info('Migrated schema: added scale_out_target column to trades');
+    } catch (err) {
+      logger.warn('Schema migration warning for scale_out_target', { error: err.message });
+    }
+  }
+
+  if (!columns.includes('remaining_qty')) {
+    try {
+      db.exec('ALTER TABLE trades ADD COLUMN remaining_qty REAL');
+      logger.info('Migrated schema: added remaining_qty column to trades');
+    } catch (err) {
+      logger.warn('Schema migration warning for remaining_qty', { error: err.message });
+    }
+  }
+
+  // Backfill existing trade rows where remaining_qty is unpopulated
+  try {
+    db.exec('UPDATE trades SET remaining_qty = qty WHERE remaining_qty IS NULL');
+  } catch (err) {
+    logger.warn('Schema migration warning for remaining_qty backfill', { error: err.message });
+  }
 }
 
 function getState(key) {

@@ -7,7 +7,7 @@ const killSwitch       = require('../risk/killSwitch');
 const logger           = require('../utils/logger');
 const { checkCorrelation } = require('../risk/correlation');
 
-const SYMBOLS = (process.env.WATCHED_SYMBOLS || 'BTC/USD,ETH/USD,AAPL').split(',').map(s => s.trim());
+const SYMBOLS = ['SPY', 'QQQ', 'DIA', 'IWM', 'GLD', 'TLT'];
 
 const tickBuffer = {};
 
@@ -57,8 +57,11 @@ function startStream() {
   cryptoStream.onError(err => logger.error('Alpaca Crypto WS Error', { error: err.message || err }));
   stockStream.onError(err => logger.error('Alpaca Stock WS Error', { error: err.message || err }));
 
-  stockStream.connect();
-  cryptoStream.connect();
+  const cryptos = SYMBOLS.filter(s => isCryptoSymbol(s));
+  const stocks = SYMBOLS.filter(s => !isCryptoSymbol(s));
+
+  if (stocks.length > 0) stockStream.connect();
+  if (cryptos.length > 0) cryptoStream.connect();
 }
 
 async function processSymbol(symbol, latestBar) {

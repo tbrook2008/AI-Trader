@@ -20,7 +20,7 @@ async function main() {
   // 1. Data aggregation
   const fakeBar = { open: 80000, high: 80500, low: 79500, close: 80200, volume: 5000 };
   const bundle = await aggregate(symbol, fakeBar);
-  console.log(`[✅] Data aggregated | price=$${bundle.price} | bars=${bundle.history.length} | headlines=${bundle.headlines.length}`);
+  console.log(`[✅] Data aggregated | price=$${bundle.price} | bars=${bundle.history.length} | headlines=${bundle.headlines ? bundle.headlines.length : 0}`);
 
   // 2. AI Consensus
   const consensus = await runConsensus(bundle);

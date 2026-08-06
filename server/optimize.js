@@ -28,7 +28,7 @@ process.env.DRY_RUN = 'false';
 
 const tradeExecutor = require('./execution/tradeExecutor');
 
-const SYMBOLS = ['SPY', 'QQQ', 'DIA', 'IWM', 'GLD', 'USO', 'TLT'];
+const SYMBOLS = ['AAPL', 'SHOP', 'PYPL', 'NVDA', 'CRWD', 'UBER', 'TSLA', 'SPY', 'TGT'];
 const HISTORY_LIMIT = 500;
 const DAYS_TO_FETCH = 7; // Rigorous backtesting
 

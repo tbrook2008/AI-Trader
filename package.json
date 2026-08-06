@@ -4,6 +4,7 @@
   "description": "Autonomous AI Quantitative Trading System — Tri-Node Consensus",
   "main": "server/index.js",
   "scripts": {
+    "test": "node test-all.js",
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "loop": "node server/autonomous/scheduler.js",

@@ -1,51 +1,65 @@
 {
+  "AAPL": {
+    "minVolumeRatio": 1,
+    "sdMultiplier": 2,
+    "rsiOversold": 35,
+    "rsiOverbought": 60,
+    "stopLossMultiplier": 1.5
+  },
+  "SHOP": {
+    "minVolumeRatio": 1,
+    "sdMultiplier": 2,
+    "rsiOversold": 35,
+    "rsiOverbought": 60,
+    "stopLossMultiplier": 1.5
+  },
+  "PYPL": {
+    "minVolumeRatio": 1.2,
+    "sdMultiplier": 1.5,
+    "rsiOversold": 35,
+    "rsiOverbought": 65,
+    "stopLossMultiplier": 1
+  },
+  "NVDA": {
+    "minVolumeRatio": 1.2,
+    "sdMultiplier": 2,
+    "rsiOversold": 40,
+    "rsiOverbought": 60,
+    "stopLossMultiplier": 1.5
+  },
+  "CRWD": {
+    "minVolumeRatio": 1.2,
+    "sdMultiplier": 1.5,
+    "rsiOversold": 35,
+    "rsiOverbought": 65,
+    "stopLossMultiplier": 1
+  },
+  "UBER": {
+    "minVolumeRatio": 1,
+    "sdMultiplier": 2,
+    "rsiOversold": 35,
+    "rsiOverbought": 60,
+    "stopLossMultiplier": 1
+  },
+  "TSLA": {
+    "minVolumeRatio": 1.2,
+    "sdMultiplier": 2,
+    "rsiOversold": 40,
+    "rsiOverbought": 60,
+    "stopLossMultiplier": 1
+  },
   "SPY": {
-    "minVolumeRatio": 1,
-    "sdMultiplier": 1.5,
-    "rsiOversold": 35,
-    "rsiOverbought": 60,
-    "stopLossMultiplier": 1
-  },
-  "QQQ": {
-    "minVolumeRatio": 1,
-    "sdMultiplier": 2,
-    "rsiOversold": 35,
-    "rsiOverbought": 60,
-    "stopLossMultiplier": 1
-  },
-  "DIA": {
     "minVolumeRatio": 1.2,
-    "sdMultiplier": 1.5,
-    "rsiOversold": 40,
-    "rsiOverbought": 60,
-    "stopLossMultiplier": 1
-  },
-  "IWM": {
-    "minVolumeRatio": 1.2,
-    "sdMultiplier": 1.5,
-    "rsiOversold": 35,
-    "rsiOverbought": 65,
-    "stopLossMultiplier": 1.5
-  },
-  "GLD": {
-    "minVolumeRatio": 1,
     "sdMultiplier": 2,
     "rsiOversold": 35,
     "rsiOverbought": 60,
     "stopLossMultiplier": 1.5
   },
-  "USO": {
-    "minVolumeRatio": 1.2,
-    "sdMultiplier": 1.5,
-    "rsiOversold": 40,
-    "rsiOverbought": 65,
-    "stopLossMultiplier": 1.5
-  },
-  "TLT": {
+  "TGT": {
     "minVolumeRatio": 1,
     "sdMultiplier": 1.5,
     "rsiOversold": 35,
-    "rsiOverbought": 65,
+    "rsiOverbought": 60,
     "stopLossMultiplier": 1
   }
 }

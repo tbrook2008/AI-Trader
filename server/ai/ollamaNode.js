@@ -40,7 +40,7 @@ Respond with ONLY a JSON object in this exact format:
 ONLY output valid JSON. No explanation, no markdown.`;
 
 async function analyze(bundle) {
-  const headlines = bundle.headlines.map(h => h.title).filter(Boolean);
+  const headlines = (bundle.headlines || []).map(h => h.title).filter(Boolean);
 
   if (headlines.length === 0) {
     logger.warn('Ollama node: no headlines — returning mean-reverting', { symbol: bundle.symbol });
