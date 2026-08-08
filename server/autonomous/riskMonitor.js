@@ -27,7 +27,14 @@ async function monitorRisk() {
 
   const closePromises = [];
 
+  const { ALL_TICKERS } = require('../quantitative/composerStrategy');
+
   for (const pos of positions) {
+    if (ALL_TICKERS.includes(pos.symbol)) {
+      // Ignore long-term Composer ETFs so we don't accidentally liquidate them with intraday stops
+      continue;
+    }
+
     let symbol = pos.symbol;
     // Map Alpaca format 'DOGEUSD' → internal 'DOGE/USD' using regex
     if (/^[A-Z]+USD$/.test(symbol) && symbol !== 'USD') {
