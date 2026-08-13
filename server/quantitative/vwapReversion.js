@@ -202,7 +202,7 @@ function calculateVWAP(candles) {
     let variance = cumulativeVariance / cumulativeVolume;
     let sd = Math.sqrt(variance);
 
-    const sdMultiplier = getSymbolParams(candles[0].symbol || 'SPY').sdMultiplier || 2.0;
+    const sdMultiplier = getSymbolParams(candles[0].symbol || 'SPY').sdMultiplier || 1.5;
 
     const atr = calculateATR(candles, 14);
 
@@ -230,17 +230,17 @@ function evaluate(history) {
 
     const currentCandle = history[history.length - 1];
 
-    // R2 Time-of-Day Filter (ignore signals before 10:15 AM ET, i.e. timeVal < 1015 or totalMinutes < 615)
+    // R2 Time-of-Day Filter (ignore signals before 9:45 AM ET, i.e. timeVal < 945)
     const timestamp = currentCandle.timestamp || currentCandle.time;
     const etTime = parseETTime(timestamp);
-    if (!etTime || etTime.timeVal < 1015) {
+    if (!etTime || etTime.timeVal < 945) {
         return null;
     }
 
-    // R1 Macro Regime Filter (reject when ADX >= 25 or Hurst > 0.55)
+    // R1 Macro Regime Filter (reject when ADX >= 30 or Hurst > 0.60)
     const adx = computeADX(history, 14);
     const hurst = calculateHurst(history);
-    if ((adx !== null && adx >= 25) || (hurst !== null && hurst > 0.55)) {
+    if ((adx !== null && adx >= 30) || (hurst !== null && hurst > 0.60)) {
         return null;
     }
 
@@ -264,8 +264,8 @@ function evaluate(history) {
     }
 
     const params = getSymbolParams(history[0].symbol || 'SPY');
-    const rsiOversold = params.rsiOversold || 35;
-    const rsiOverbought = params.rsiOverbought || 65;
+    const rsiOversold = params.rsiOversold || 40;
+    const rsiOverbought = params.rsiOverbought || 60;
     const volumeReq = params.minVolumeRatio || 1.2;
     const slMultiplier = params.stopLossMultiplier || 1.5;
 
