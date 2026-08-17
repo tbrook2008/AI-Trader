@@ -7,7 +7,7 @@ const killSwitch       = require('../risk/killSwitch');
 const logger           = require('../utils/logger');
 const { checkCorrelation } = require('../risk/correlation');
 
-const SYMBOLS = ['SPY', 'QQQ', 'DIA', 'IWM', 'GLD', 'TLT'];
+const SYMBOLS = (process.env.WATCHED_SYMBOLS || 'SPY,QQQ,BTC/USD,ETH/USD').split(',').map(s => s.trim());
 
 const tickBuffer = {};
 

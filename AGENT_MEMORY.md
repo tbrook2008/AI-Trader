@@ -8,6 +8,8 @@ This file contains the context of the AI Trader project so that cloud agents can
 - An hourly cron job is configured to verify PM2 status, monitor logs for errors, and calculate recent PnL from the local SQLite db.
 
 ## Recent Fixes
+- **loop.js WATCHED_SYMBOLS Fix (Aug 2026):** `loop.js` had a hardcoded `SYMBOLS` constant (`['SPY','QQQ','DIA','IWM','GLD','TLT']`) that ignored the `WATCHED_SYMBOLS` env var entirely. The crypto WebSocket stream was subscribed to nothing. Fixed to read from `process.env.WATCHED_SYMBOLS`. Updated watchlist to 10 high-liquidity symbols: `SPY,QQQ,AAPL,NVDA,TSLA,MSFT,BTC/USD,ETH/USD,SOL/USD,DOGE/USD`.
+- **DB Orphan Cleanup (Aug 2026):** 10 trades stuck as `submitted` (from June 2026) were marked `cancelled` in SQLite. Risk monitor was attempting to manage phantom positions every 60s.
 - **Pure Quantitative Pipeline:** The AI (Gemini/Ollama) consensus layer has been completely removed. The bot now runs entirely on advanced mathematical models.
 - **Regime Detection:** Replaced ADX with a Gaussian Mixture Model (GMM) approximating a Hidden Markov Model (HMM) to classify market regimes based on log-returns volatility.
 - **Momentum Trigger:** Replaced MACD and VWAP with a dynamic State-Space Kalman Filter that tracks price velocity and confirms with volume spikes.

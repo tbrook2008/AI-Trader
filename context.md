@@ -74,7 +74,7 @@ All 4 gates must pass:
 | File | Purpose |
 |------|---------|
 | `server/autonomous/scheduler.js` | Entry point — starts WebSocket stream + 60s risk monitor |
-| `server/autonomous/loop.js` | WebSocket handler — builds 1-min bars from quote stream |
+| `server/autonomous/loop.js` | WebSocket handler — reads `WATCHED_SYMBOLS` env var, splits symbols across stock/crypto streams, builds 1-min bars |
 | `server/autonomous/riskMonitor.js` | Crypto stop-loss/take-profit monitor (every 60s) |
 | `server/ai/consensus.js` | Regime classification pipeline — Gemini + Ollama + single-node degraded mode |
 | `server/ai/ollamaNode.js` | ARIA API client — analyze() and refine() |
@@ -112,7 +112,7 @@ WEIGHT_GEMINI=0.65
 WEIGHT_OLLAMA=0.35
 
 TRADING_MODE=paper
-WATCHED_SYMBOLS=BTC/USD,ETH/USD,SOL/USD,ADA/USD,DOGE/USD,AVAX/USD,DOT/USD,LINK/USD
+WATCHED_SYMBOLS=SPY,QQQ,AAPL,NVDA,TSLA,MSFT,BTC/USD,ETH/USD,SOL/USD,DOGE/USD
 
 ATR_MULTIPLIER=3.5               # Raised from 2.0 — gives stops breathing room
 ATR_TARGET_MULTIPLIER=2.0        # Target = 2x stop distance (1:2 R:R)
@@ -223,6 +223,7 @@ pm2 logs ai-trader-loop --lines 30 --nostream  # Confirm connected + no errors
 - Windows `UV_HANDLE_CLOSING` assertion on process.exit() — harmless libuv cleanup warning on Node 24.
 - Crypto WebSocket volume is very low for some pairs (DOT, LINK) — volume filter may produce `BELOW_AVG` frequently.
 - Paper trading WebSocket quotes are slightly delayed vs live — normal.
+- `test-all.js` unit test "R2: Returns null before 10:15 AM ET" will fail if run after 10:15 AM ET because it doesn't mock the clock — it relies on wall time. The comprehensive E2E suite (TC-R2-01/02) mocks time correctly and is the reliable gate.
 
 ---
 
@@ -238,3 +239,4 @@ pm2 logs ai-trader-loop --lines 30 --nostream  # Confirm connected + no errors
 | Post-loss cooldown multiplier | Prevents immediate re-entry after stop-out on same symbol |
 | Kelly capped at 6% | Losses up to $84/trade with 10% position; 6% reduces to ~$50 max |
 | Software risk monitor for crypto | Alpaca doesn't support bracket/OCO orders for crypto |
+| WATCHED_SYMBOLS drives WebSocket | `loop.js` was previously hardcoded to 6 ETFs — wired to env var Aug 2026 so crypto stream is actually subscribed |
