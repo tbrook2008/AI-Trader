@@ -30,6 +30,7 @@ function startStream() {
     const symbol = bar.Symbol || bar.S;
     logger.info(`Received 1-min stock bar for ${symbol}`, { close: bar.ClosePrice, volume: bar.Volume });
     const formattedBar = {
+      timestamp: bar.Timestamp || bar.timestamp || bar.t || new Date().toISOString(),
       open: bar.OpenPrice, high: bar.HighPrice, low: bar.LowPrice, close: bar.ClosePrice, volume: bar.Volume
     };
     await processSymbol(symbol, formattedBar);
@@ -45,6 +46,7 @@ function startStream() {
     const symbol = bar.Symbol || bar.S;
     logger.info(`Received 1-min crypto bar for ${symbol}`, { close: bar.Close || bar.ClosePrice, volume: bar.Volume });
     const formattedBar = {
+      timestamp: bar.Timestamp || bar.timestamp || bar.t || new Date().toISOString(),
       open: bar.Open || bar.OpenPrice, 
       high: bar.High || bar.HighPrice, 
       low: bar.Low || bar.LowPrice, 

@@ -46,6 +46,7 @@ async function primeHistory(symbol) {
       });
       bars = resp.get(symbol) || [];
       barsHistory[symbol] = bars.map(b => ({
+        timestamp: b.Timestamp || b.timestamp,
         open:   b.Open,
         high:   b.High,
         low:    b.Low,
@@ -62,6 +63,7 @@ async function primeHistory(symbol) {
       });
       for await (const b of iter) {
         bars.push({
+          timestamp: b.Timestamp || b.timestamp,
           open:   b.OpenPrice,
           high:   b.HighPrice,
           low:    b.LowPrice,

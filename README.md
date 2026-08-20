@@ -328,6 +328,10 @@ node test-full-cycle.js   # End-to-end DRY_RUN — must complete without crash
 
 ## Changelog
 
+### v4.1.1 (August 2026)
+- **Bar Timestamp Mapping Fix**: Fixed Alpaca V2 bar timestamp mapping (`Timestamp` vs `timestamp`). Prevents VWAP regime filter from evaluating invalid dates which caused 0 trades to be executed.
+- **Crypto Live Bar Fix**: Adjusted live streaming format to provide timestamps correctly to the dataAggregator for crypto and stocks.
+
 ### v4.1.0 (May 6, 2026)
 - **Gemini circuit breaker**: Detects 429/spending-cap, logs once, silent for 1hr
 - **Single-node consensus**: Ollama-only mode with raised threshold (72) when Gemini unavailable
