@@ -1,4 +1,18 @@
 {
+  "SPY": {
+    "minVolumeRatio": 1,
+    "sdMultiplier": 1.5,
+    "rsiOversold": 40,
+    "rsiOverbought": 60,
+    "stopLossMultiplier": 1
+  },
+  "QQQ": {
+    "minVolumeRatio": 1.2,
+    "sdMultiplier": 1.5,
+    "rsiOversold": 35,
+    "rsiOverbought": 60,
+    "stopLossMultiplier": 1.5
+  },
   "AAPL": {
     "minVolumeRatio": 1,
     "sdMultiplier": 2,
@@ -6,56 +20,49 @@
     "rsiOverbought": 60,
     "stopLossMultiplier": 1.5
   },
-  "SHOP": {
-    "minVolumeRatio": 1,
-    "sdMultiplier": 2,
-    "rsiOversold": 35,
-    "rsiOverbought": 60,
-    "stopLossMultiplier": 1.5
-  },
-  "PYPL": {
-    "minVolumeRatio": 1.2,
-    "sdMultiplier": 1.5,
-    "rsiOversold": 35,
-    "rsiOverbought": 65,
-    "stopLossMultiplier": 1
-  },
   "NVDA": {
-    "minVolumeRatio": 1.2,
-    "sdMultiplier": 2,
-    "rsiOversold": 40,
-    "rsiOverbought": 60,
-    "stopLossMultiplier": 1.5
-  },
-  "CRWD": {
-    "minVolumeRatio": 1.2,
-    "sdMultiplier": 1.5,
-    "rsiOversold": 35,
-    "rsiOverbought": 65,
-    "stopLossMultiplier": 1
-  },
-  "UBER": {
     "minVolumeRatio": 1,
     "sdMultiplier": 2,
     "rsiOversold": 35,
     "rsiOverbought": 60,
-    "stopLossMultiplier": 1
+    "stopLossMultiplier": 1.5
   },
   "TSLA": {
-    "minVolumeRatio": 1.2,
-    "sdMultiplier": 2,
+    "minVolumeRatio": 1,
+    "sdMultiplier": 1.5,
     "rsiOversold": 40,
     "rsiOverbought": 60,
     "stopLossMultiplier": 1
   },
-  "SPY": {
+  "MSFT": {
     "minVolumeRatio": 1.2,
     "sdMultiplier": 2,
     "rsiOversold": 35,
     "rsiOverbought": 60,
+    "stopLossMultiplier": 1
+  },
+  "BTC/USD": {
+    "minVolumeRatio": 1,
+    "sdMultiplier": 1.5,
+    "rsiOversold": 35,
+    "rsiOverbought": 65,
+    "stopLossMultiplier": 1
+  },
+  "ETH/USD": {
+    "minVolumeRatio": 1.2,
+    "sdMultiplier": 1.5,
+    "rsiOversold": 40,
+    "rsiOverbought": 65,
+    "stopLossMultiplier": 1
+  },
+  "SOL/USD": {
+    "minVolumeRatio": 1,
+    "sdMultiplier": 2,
+    "rsiOversold": 35,
+    "rsiOverbought": 65,
     "stopLossMultiplier": 1.5
   },
-  "TGT": {
+  "DOGE/USD": {
     "minVolumeRatio": 1,
     "sdMultiplier": 1.5,
     "rsiOversold": 35,
